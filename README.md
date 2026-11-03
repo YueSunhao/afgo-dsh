@@ -160,6 +160,8 @@ dsh plugin --profile desktop add github:YueSunhao/afgo-dsh
 
 令牌**不要**写进 `token` 字段——那会随 profile 的 `package.json` 落盘。放在 `~/.afg/config.json` 或 `AFG_TOKEN` 环境变量里。
 
+> **本地开发注意**：`dsh plugin add <目录>` 会被 pnpm 装成 **junction / 符号链接**，而 Node 按真实路径解析 `@deepseek-ai/dsh-tools`，从 `E:\...` 往上找不到 profile 的 peer，会报 `ERR_MODULE_NOT_FOUND`。要么用 tarball 装（`npm pack` 后 `dsh plugin add ./afgo-dsh-1.2.0.tgz`），要么走 `github:` / npm——那两条路装的是实体目录，能正常解析。
+
 ## 作为 Agent 技能安装
 
 本包是标准的 Agent Skills 形态：一个目录 + `SKILL.md`（YAML frontmatter 里 `name` + `description`）+ 脚本。凡是认这套约定的 Agent，把仓库整个 clone 到它的技能目录即可。

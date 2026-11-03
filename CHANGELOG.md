@@ -20,8 +20,9 @@ DSH 插件形态（bundle）+ 可检索性改造。同一仓库现在既能 `dsh
 
 ### 验证
 
-- 已在本机 `dsh plugin --profile desktop add E:\DSH\AFGskill` 实际安装：`afgo-dsh` 同时写入 profile 的 `dependencies` 与 `dsh.profile.bundles`。
-- 用桩件替换 `@deepseek-ai/dsh-tools` 后跑通五个工具的注册与参数拼装；负例（未知 action、缺必填参数）按预期报错。
+- 已在本机 `dsh plugin --profile desktop add` 实际安装：`afgo-dsh` 同时写入 profile 的 `dependencies` 与 `dsh.profile.bundles`；`dsh --profile desktop --dump-config` 能看到合成后的 `- id: afgo` 行。
+- **用真实的 `@deepseek-ai/dsh-tools` 加载插件成功**：五个工具的 schema 全部通过 `defineTool` 校验。首版因 object 参数缺少 `additionalProperties` 被拒绝（`UNSUPPORTED_SCHEMA`），已修正。
+- 踩坑记录：`dsh plugin add <本地目录>` 装成 junction，Node 按真实路径解析 peer 会 `ERR_MODULE_NOT_FOUND`；改用 tarball 安装（实体目录）即正常。已在 README 注明。
 - **工具注册需重启 DSH 生效**，该步未执行；本机 AFG 临时令牌已过期（401），真实调用待换新令牌后复测。
 
 ## [1.1.1] — 2026-11-03
