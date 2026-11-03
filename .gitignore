@@ -1,0 +1,26 @@
+# 本地配置与令牌（千万不要提交）
+.afg/
+config.json
+*config*.json
+!examples/*.json
+*.token
+.env
+.env.*
+
+# 运行产物
+run/
+out/
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
