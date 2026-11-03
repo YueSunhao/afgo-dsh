@@ -56,11 +56,21 @@ jobs:
           m = re.match(r"^---\n(.*?)\n---\n", text, re.S)
           assert m, "SKILL.md 缺少 YAML frontmatter"
           fm = m.group(1)
-          for key in ("name:", "description:", "compatibility:"):
+          for key in ("name:", "description:"):
               assert key in fm, f"frontmatter 缺少 {key}"
           assert 'name: afg' in fm, "技能名应为 afg"
+          # 非标准字段不再使用：DSH 的 skills-manager 与 WorkBuddy 都不解析它们
+          for banned in ("allowed-tools:", "compatibility:"):
+              assert banned not in fm, f"frontmatter 不应再包含 {banned}"
           print("SKILL.md frontmatter ok")
           PY
+
+      - name: Launchers
+        run: |
+          bash -n scripts/run.sh
+          chmod +x scripts/run.sh
+          bash scripts/run.sh --version
+          AFG_PYTHON="$(command -v python3)" bash scripts/run.sh --help > /dev/null
 
       - name: No credentials committed
         run: |

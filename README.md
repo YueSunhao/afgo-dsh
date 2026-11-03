@@ -83,25 +83,54 @@ python3 scripts/afg.py tasks files <task_id>
 python3 scripts/afg.py cloud download <文件id> -o report.md
 ```
 
-## 装成 DSH 技能
+## 安装（任意 Agent）
 
-DSH（DeepSeek Harness）会扫描技能目录，把本仓库整个放进技能目录即可，`SKILL.md` 就是入口：
+本包是标准的 Agent Skills 形态：一个目录 + `SKILL.md`（YAML frontmatter 里 `name` + `description`）+ 脚本。凡是认这套约定的 Agent，把仓库整个 clone 到它的技能目录即可。
+
+| Agent | 用户级（全局） | 项目级 |
+|---|---|---|
+| **DSH** (DeepSeek Harness) | `~/.dsh/skills/` | `<项目>/.dsh/skills/` |
+| **WorkBuddy** | `~/.workbuddy/skills/` | `<项目>/.workbuddy/skills/` |
+| Claude Code | `~/.claude/skills/` | `<项目>/.claude/skills/` |
+| Codex | `~/.codex/skills/` | `<项目>/.codex/skills/` |
+| Cursor | `~/.cursor/skills/` | `<项目>/.cursor/skills/` |
+| Gemini CLI | `~/.gemini/skills/` | `<项目>/.gemini/skills/` |
 
 ```bash
-# 全局技能：所有项目都能用
+# 以 DSH 为例；换成上表任意目录即可
 git clone <本仓库地址> ~/.dsh/skills/afg
 
-# 或项目级技能：只在这个仓库里生效
-git clone <本仓库地址> <你的项目>/.dsh/skills/afg
+# WorkBuddy
+git clone <本仓库地址> ~/.workbuddy/skills/afg
 ```
 
-Windows：
+Windows PowerShell：
 
 ```powershell
 git clone <本仓库地址> "$env:USERPROFILE\.dsh\skills\afg"
+git clone <本仓库地址> "$env:USERPROFILE\.workbuddy\skills\afg"
 ```
 
-装好后在 DSH 里直接说"帮我用 AsterFire 跑个 DSSP"，模型会自动加载 `SKILL.md` 里的命令地图；技能目录变更后会话内热加载，不必重启。
+装好后直接说「帮我用 AsterFire 跑个 DSSP」，Agent 会自动加载 `SKILL.md` 里的命令地图。
+
+- **DSH**：技能目录变更**会话内热加载**，不必重启。
+- **WorkBuddy**：技能扫描结果有缓存（`~/.workbuddy/.skill-list-cache.json`），**重启后在技能列表里生效**。
+- 目录名建议就叫 `afg`，与 frontmatter 的 `name` 一致，避免个别 Agent 按目录名索引时对不上。
+
+## 运行方式
+
+技能里自带两个启动器，会自动挑一个**真能跑**的 Python 3（Windows 上 `python3` 常是应用商店的假壳子，启动器会跳过它）：
+
+```bash
+bash scripts/run.sh info                                        # macOS / Linux / Git Bash
+powershell -ExecutionPolicy Bypass -File scripts\run.ps1 info   # Windows
+
+# 或者直接调解释器
+python3 scripts/afg.py info
+python  scripts\afg.py info
+```
+
+用 `AFG_PYTHON` 可以强制指定解释器路径；找不到可用解释器时启动器以退出码 2 结束并说明原因。
 
 ## 命令速查
 
@@ -166,21 +195,33 @@ afg raw GET /tasks --query type=kit         # 任意端点兜底
 
 - Python 3.8+，无第三方依赖（Windows / macOS / Linux 均可）
 - 网络能访问 `https://sidereus-ai.com`
+- 启动器会跳过「存在但跑不起来」的解释器并自动降级；也可用 `AFG_PYTHON` 强制指定
 - Windows PowerShell 用户注意：内联 JSON 会被吃掉引号，一律把参数写进文件用 `--input @params.json`
+
+## 兼容性说明
+
+- **已实测**：DSH 安装后能在技能目录中加载并正常调用（含一次完整的 Kit 计算与结果下载）。
+- **WorkBuddy**：其应用包内 `createSkillsDomainService` 的 `skillsDir` 解析为 `<configDir>/skills`（即 `~/.workbuddy/skills`），与本包的目录约定一致；技能格式（`SKILL.md` + `name`/`description`）与其 46 个内置技能完全相同。**加载动作需重启 WorkBuddy 后确认**，本仓库未在 WorkBuddy 内实跑。
+- 其他 Agent 按其官方技能目录约定放置即可；没有 shell 执行能力的 Agent 只能读 `SKILL.md`，无法真正调用 API。
 
 ## 项目结构
 
 ```
 .
-├── SKILL.md                 # DSH 技能入口（命令地图、语义、坑）
+├── SKILL.md                 # 技能入口（命令地图、平台语义、坑）
 ├── README.md
-├── scripts/afg.py           # 全部实现，单文件
+├── CHANGELOG.md
+├── LICENSE                  # MIT
+├── scripts/
+│   ├── afg.py               # 全部实现，单文件、纯标准库
+│   ├── run.sh               # POSIX 启动器（自动挑可用 Python 3）
+│   └── run.ps1              # Windows 启动器（同上，ASCII-only）
 ├── reference/
 │   ├── api.md               # 74 个操作的中文端点参考
 │   └── openapi.json         # 平台官方 OpenAPI 规范快照
 ├── examples/
 │   └── kit-input-dssp.json  # 一个真实可跑的 Kit 输入示例
-└── .github/workflows/ci.yml # 语法 + CLI + JSON 校验
+└── .github/workflows/ci.yml # 语法 + CLI + JSON + frontmatter + 凭据泄漏
 ```
 
 ## 免责声明

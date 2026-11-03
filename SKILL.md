@@ -1,19 +1,39 @@
 ---
 name: afg
 description: "Drive AsterFire Go (星使智算平台, sidereus-ai.com) from the terminal: cloud disk upload/download, Agent 任务, Kit 计算, 工作流, 开发者镜像. Use whenever the user wants to run something on AsterFire Go / 星使 / AFG — 上传结构文件、提交蛋白结构预测或分子动力学任务、跑某个 Kit、查询任务状态、下载结果、列 Agent/Kit 清单 — or asks what agents/kits the platform offers, or hands over an AsterFire API token to configure. Also use when someone references the asterfire CLI but it is not installed: this skill talks to the same Open API v1 directly with plain Python, no Go binary and no pip install needed."
-compatibility: Requires Python 3.8+ (stdlib only, no third-party packages) and network access to https://sidereus-ai.com. Needs an AsterFire API token in ~/.afg/config.json (or AFG_TOKEN).
-allowed-tools: Bash, Read
+description_en: "Operate the AsterFire Go science-computing platform (sidereus-ai.com) from a terminal: upload structures, submit Agent/Kit jobs, inspect task status, download results, manage workflows. Same stable HTTP API the official asterfire CLI wraps, but pure Python stdlib — no Go binary, no pip install."
 ---
 
 # AFG — AsterFire Go 平台操作
 
-把 DSH 接到星使智算平台（AsterFire Go）的 **Galileo Open API v1** 上。官方 `asterfire` CLI 只是这套 HTTP API 的包装层，本技能直接用 Python 标准库调用同一套端点，因此**不需要下载 10 MB 的 Go 二进制，也不需要 pip 装任何包**。
+把当前 Agent 接到星使智算平台（AsterFire Go）的 **Galileo Open API v1** 上。官方 `asterfire` CLI 只是这套 HTTP API 的包装层，本技能直接用 Python 标准库调用同一套端点，因此**不需要下载 10 MB 的 Go 二进制，也不需要 pip 装任何包**。
 
-> 平台文档（飞书）描述的是官方 CLI 的子命令；本技能的 `afg.py` 用同样的动词（`tasks create`、`cloud upload`、`wf execute`…）映射到 REST 端点，遇到文档里没有的能力用 `afg raw` 直接打。
+适用于任何支持「读 SKILL.md + 执行 shell 命令」的 Agent：DSH、WorkBuddy、Claude Code、Codex、Cursor 等，用法完全一致。
+
+## 怎么跑
+
+本文件所在目录记为 `<skill-dir>`（含 `SKILL.md` 的那一层）。三种等价写法，任选一种：
+
+```bash
+# 1) 启动器（推荐，自动找 Python）
+bash <skill-dir>/scripts/run.sh info                              # macOS / Linux / Git Bash
+powershell -ExecutionPolicy Bypass -File <skill-dir>\scripts\run.ps1 info   # Windows
+
+# 2) 直接调解释器
+python3 <skill-dir>/scripts/afg.py info
+python  <skill-dir>\scripts\afg.py info
+
+# 3) 装到 PATH 后（可选）
+ln -s <skill-dir>/scripts/afg.py ~/bin/afg
+```
+
+启动器按 `AFG_PYTHON` → `python3` / `python` / `py -3` 的顺序找一个可用的 Python 3，找不到会以退出码 2 报错。要求 Python 3.8+，只用标准库。
+
+先跑 `info` 确认令牌有效：能返回 `username`、`tier`、`workspaces` 就是通的。`--json` 输出紧凑单行（放在子命令前后都行），不加则缩进。退出码 `0` 成功、`1` 接口或网络错误、`2` 参数错误——脚本里靠退出码判断，不要靠输出文本。
 
 ## 配置
 
-令牌放在 `<home>/.afg/config.json`（已在用户机器上配好）：
+令牌放在 `<home>/.afg/config.json`：
 
 ```json
 { "base_url": "https://sidereus-ai.com/api", "token": "<api token>" }
@@ -22,19 +42,6 @@ allowed-tools: Bash, Read
 解析顺序：`--token` → 环境变量 `AFG_TOKEN` → `~/.afg/config.json` → `~/.asterfire/config.json`（官方 CLI 的配置，兼容用）。`base_url` 同理可用 `--base-url` / `AFG_BASE_URL` 覆盖；末尾不要带 `/open/v1`，程序自己拼。
 
 **安全规则**：令牌等同账号密码。不要把它打印到对话里、不要写进项目目录或提交到仓库、不要出现在给用户看的命令示例里。需要展示配置时用 `afg info`（只回账号信息）。
-
-## 怎么跑
-
-把 `<skill-dir>` 换成这份 SKILL.md 所在目录（Windows 路径用反斜杠）：
-
-```bash
-# macOS / Linux
-python3 <skill-dir>/scripts/afg.py <命令>
-# Windows
-C:\Users\PC\AppData\Local\Programs\Python\Python311\python.exe -X utf8 <skill-dir>\scripts\afg.py <命令>
-```
-
-先跑 `afg info` 确认令牌有效：能返回 `username`、`tier`、`workspaces` 就是通的。`--json` 输出紧凑单行（不加则是缩进格式，两种位置都能写）。退出码 `0` 成功、`1` 接口或网络错误、`2` 参数错误——脚本里靠退出码判断，不要靠输出文本。
 
 ## 命令地图
 
@@ -58,9 +65,9 @@ C:\Users\PC\AppData\Local\Programs\Python\Python311\python.exe -X utf8 <skill-di
 | 工作流 | `wf list/create/get/execute/status/executions/execution/exec-status/lineage` |
 | 节点 | `wf node-outputs/node-execution/node-logs/node-retry/node-stop/node-input` |
 | 流程工具与模板 | `wf tools` · `wf tool-contract <name>` · `wf templates` · `wf use-template <id>` |
-| 任意端点兜底 | `afg raw GET /tasks --query type=kit` · `afg raw POST /kits/submit --body '{"toolbox":"DSSP","input":{...}}'` |
+| 任意端点兜底 | `raw GET /tasks --query type=kit` · `raw POST /kits/submit --body @body.json` |
 
-完整的接口契约（74 个操作、全部参数和请求体字段）在 `reference/api.md`。`--help` 对每一层都可用：`afg --help`、`afg tasks --help`、`afg wf --help`。
+完整的接口契约（74 个操作、全部参数和请求体字段）在本技能目录的 `reference/api.md`，原始规范在 `reference/openapi.json`。`--help` 对每一层都可用：`afg --help`、`afg tasks --help`、`afg wf --help`。
 
 ## 典型流程
 
@@ -123,7 +130,7 @@ afg wf node-outputs <plan_id> <node_id> --execution-id <execution_id> --json
 
 ## 实测记录（2026-10-27）
 
-同一账号 `u040c97d29d0b30a4`（trial/basic）上验证过的：
+同一账号（trial/basic 档位）上验证过的：
 
 - `info` `models` `agents` `kits list` `kits schema` `cloud list` `cloud upload` `cloud download` `raw GET /health` `wf list` `tasks list/get/status/files` — 全部正常。
 - 完整执行链跑通一次：`kits submit --kit DSSP` → `tasks files` → `cloud download`，报告「运行状态：成功，解析残基数 137，识别链 A」，拿到 `secondary_structure.tsv`（5 KB，137 行）与 `report.md`。
@@ -136,5 +143,5 @@ afg wf node-outputs <plan_id> <node_id> --execution-id <execution_id> --json
 - `缺少 API 令牌` → 写 `~/.afg/config.json`，或 `export AFG_TOKEN=...`。
 - `401` → 令牌无效，或令牌与 `base_url` 不属于同一环境（生产 `https://sidereus-ai.com/api`）。
 - `403` → 账号权限不足（团队资源、开发者资源），不是令牌问题。
-- `command not found` / Python 缺失 → 本技能不需要 `asterfire` 二进制；用上面「怎么跑」里的解释器绝对路径。
+- `找不到 Python 3` → 设 `AFG_PYTHON` 指向解释器绝对路径，或改用 `<skill-dir>/scripts/afg.py` 直接调用。
 - 探测连通性：`afg raw GET /health --json` 应回 `{"status":"ok"}`。
