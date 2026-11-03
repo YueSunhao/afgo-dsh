@@ -2,6 +2,28 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.2.0] — 2026-11-04
+
+DSH 插件形态（bundle）+ 可检索性改造。同一仓库现在既能 `dsh plugin add`，也能 `git clone` 当技能用。
+
+### 新增
+
+- `package.json`：包名 `afgo-dsh`，声明 `dsh.bundle.patch`，`keywords` 覆盖中英文检索词（科学计算 / 蛋白质设计 / 分子动力学 / 生物信息学 / DFT / 量子化学 等）。
+- `cordis.patch.yml`：bundle 补丁，插入 `afgo` 行，可配置 `python` / `baseUrl` / `timeoutMs`。
+- `lib/index.js`：注册五个原生工具 —— `afg_platform`、`afg_files`、`afg_tasks`、`afg_workflows`、`afg_raw`。通过 `node:child_process` 调用仓库内的 `scripts/afg.py`，实现零重复；Python 解释器自动探测（会跳过 Windows 应用商店的假壳子），支持超时与 `AbortSignal` 取消。
+- README 新增「作为 DSH 插件安装」与「可检索性」两章：工具表、配置项、触发词表、`gh repo edit --add-topic` 发布命令。
+
+### 变更
+
+- `SKILL.md` 的 `description` / `description_en` 重写，覆盖 科学计算、蛋白质设计、分子动力学、生物信息学、DFT 计算、量子化学 等触发词，提升被模型选中的概率。
+- 版本号统一到 `1.2.0`（`afg.py --version` 同步）。
+
+### 验证
+
+- 已在本机 `dsh plugin --profile desktop add E:\DSH\AFGskill` 实际安装：`afgo-dsh` 同时写入 profile 的 `dependencies` 与 `dsh.profile.bundles`。
+- 用桩件替换 `@deepseek-ai/dsh-tools` 后跑通五个工具的注册与参数拼装；负例（未知 action、缺必填参数）按预期报错。
+- **工具注册需重启 DSH 生效**，该步未执行；本机 AFG 临时令牌已过期（401），真实调用待换新令牌后复测。
+
 ## [1.1.1] — 2026-11-03
 
 文档补齐版（无功能变更）。

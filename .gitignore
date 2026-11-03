@@ -19,6 +19,15 @@ __pycache__/
 .venv/
 venv/
 
+# Node（插件本地依赖与打包产物）
+node_modules/
+npm-debug.log*
+*.tgz
+
+# 临时草稿
+_smoke.mjs
+lib/_stub_index.mjs
+
 # 编辑器 / 系统
 .vscode/
 .idea/

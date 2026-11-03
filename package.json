@@ -1,0 +1,90 @@
+{
+  "name": "afgo-dsh",
+  "version": "1.2.0",
+  "description": "AsterFire Go（星使智算）科学计算平台插件：一句话调用云端科学计算 —— 蛋白质结构预测与设计、分子动力学模拟、分子对接、自由能计算、生物信息学分析、DFT 密度泛函与量子化学计算。同时是一份可移植的 Agent 技能（DSH / WorkBuddy / Claude Code 通用），零第三方 Python 依赖。",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "agent-skill",
+    "asterfire",
+    "asterfire-go",
+    "afgo",
+    "星使智算",
+    "科学计算",
+    "科学智算",
+    "蛋白质设计",
+    "蛋白结构预测",
+    "蛋白质工程",
+    "分子动力学",
+    "分子模拟",
+    "分子对接",
+    "自由能计算",
+    "生物信息学",
+    "结构生物信息学",
+    "DFT计算",
+    "密度泛函",
+    "量子化学",
+    "第一性原理",
+    "电子结构",
+    "高通量计算",
+    "材料计算",
+    "云计算",
+    "科研自动化",
+    "science-computing",
+    "scientific-computing",
+    "computational-chemistry",
+    "quantum-chemistry",
+    "density-functional-theory",
+    "molecular-dynamics",
+    "protein-design",
+    "protein-structure-prediction",
+    "docking",
+    "bioinformatics",
+    "materials-science",
+    "hpc",
+    "workflow"
+  ],
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "scripts",
+    "reference",
+    "examples",
+    "SKILL.md",
+    "cordis.patch.yml",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "engines": {
+      "dsh": ">=0.1.7"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "*",
+    "@deepseek-ai/dsh-tools": "*"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/cordis": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-tools": {
+      "optional": true
+    }
+  }
+}

@@ -1,10 +1,15 @@
-# afg — AsterFire Go 命令行客户端 · DSH 技能
+# afgo-dsh — AsterFire Go（星使智算）DSH 插件 · 通用 Agent 技能
 
-用**纯 Python 标准库**驱动星使智算平台（AsterFire Go，`sidereus-ai.com`）：上传结构文件、提交 Agent / Kit 计算任务、管理云盘、跑工作流、查询状态、下载结果。
+一个仓库，两种用法，底层是**同一份纯 Python 标准库客户端**：
 
-不需要下载官方 `asterfire` Go 二进制，也不需要 `pip install` 任何依赖。
+| 用法 | 安装 | 生效方式 |
+|---|---|---|
+| **DSH 插件（bundle）** | `dsh plugin --profile desktop add afgo-dsh` | 重启 DSH，工具列表里直接多出 `afg_platform` / `afg_files` / `afg_tasks` / `afg_workflows` / `afg_raw` |
+| **通用 Agent 技能** | `git clone` 到任意 Agent 的技能目录 | DSH 热加载；WorkBuddy 重启后出现在技能列表 |
 
-> **English**: A dependency-free Python client (and DeepSeek Harness skill) for the AsterFire Go science-computing platform. It speaks the same stable HTTP contract that the official `asterfire` CLI wraps — Galileo Open API v1 (`/open/v1`, header `Asterfire-Token`) — so you get cloud disk, agent tasks, kit runs, and workflows without installing a 10 MB Go binary. Python 3.8+, stdlib only.
+驱动的是星使智算平台（AsterFire Go，`sidereus-ai.com`）：上传结构文件、提交 Agent / Kit 计算任务、管理云盘、跑工作流、查询状态、下载结果。**不需要下载官方 `asterfire` Go 二进制，也不需要 `pip install` 任何依赖。**
+
+> **English**: A DeepSeek Harness plugin (bundle) and a portable Agent Skill in one repository. Both drive the AsterFire Go science-computing platform through the same stable HTTP contract the official `asterfire` CLI wraps — Galileo Open API v1 (`/open/v1`, header `Asterfire-Token`) — so you get cloud disk, agent tasks, kit runs, and workflows without installing a 10 MB Go binary. Python 3.8+, stdlib only.
 
 ---
 
@@ -119,7 +124,43 @@ python3 scripts/afg.py tasks files <task_id>
 python3 scripts/afg.py cloud download <文件id> -o report.md
 ```
 
-## 安装（任意 Agent）
+## 作为 DSH 插件安装（bundle）
+
+```bash
+# npm（发布后）
+dsh plugin --profile desktop add afgo-dsh
+
+# 本地仓库 / GitHub 直装
+dsh plugin --profile desktop add /path/to/afgo-dsh
+dsh plugin --profile desktop add github:YueSunhao/afgo-dsh
+```
+
+装完 **必须重启 DSH**，插件在进程内加载，不重启不会出现。装好后工具列表里会有五个原生工具：
+
+| 工具 | 作用 | 主要 action |
+|---|---|---|
+| `afg_platform` | 账号、模型、Agent / Kit 目录与输入 schema、健康检查 | `info` `models` `agents` `kits` `kit_schema` `health` |
+| `afg_files` | 云盘上传 / 下载 / 列举 | `upload` `download` `list` |
+| `afg_tasks` | Agent 任务与 Kit 提交、跟踪、取产物 | `create` `send` `get` `status` `files` `kit_submit` `kit_run` … |
+| `afg_workflows` | 多步工作流定义、校验、执行、节点输出 | `create` `validate` `execute` `status` `node_outputs` … |
+| `afg_raw` | 任意端点兜底 | 任意 `METHOD + path` |
+
+插件配置写在 `cordis.patch.yml` 的 `insert` 行里（`~/.dsh/profiles/desktop/cordis.patch.yml` 可覆盖）：
+
+```yaml
+- insert:
+    - id: afgo
+      name: afgo-dsh
+      config:
+        python: ""                                  # 留空自动探测；也可写绝对路径
+        baseUrl: "https://sidereus-ai.com/api"
+        token: ""                                   # 建议留空，用 ~/.afg/config.json
+        timeoutMs: 120000
+```
+
+令牌**不要**写进 `token` 字段——那会随 profile 的 `package.json` 落盘。放在 `~/.afg/config.json` 或 `AFG_TOKEN` 环境变量里。
+
+## 作为 Agent 技能安装
 
 本包是标准的 Agent Skills 形态：一个目录 + `SKILL.md`（YAML frontmatter 里 `name` + `description`）+ 脚本。凡是认这套约定的 Agent，把仓库整个 clone 到它的技能目录即可。
 
@@ -261,9 +302,42 @@ afg raw GET /tasks --query type=kit         # 任意端点兜底
 > 飞书文档属于平台方的租户空间，可能要求登录或权限；Swagger UI 与 `openapi.json` 是公开的，随时可访问（2026-11 复核均为 200）。
 > 取令牌：登录官网 → 右上角用户头像 → **API令牌** → 新建 → 复制完整令牌。
 
+## 可检索性（怎么被搜到 / 怎么被选中）
+
+这条路要做两件事：**人搜得到**（GitHub / npm），**模型选得中**（工具描述与技能描述里得有触发词）。
+
+**触发词已经埋在三处**：`package.json` 的 `keywords`、`SKILL.md` 的 `description`、`lib/index.js` 里每个工具的 `description`。覆盖：
+
+| 中文 | 英文 |
+|---|---|
+| 科学计算、科学智算、星使智算、云计算、科研自动化 | science-computing, scientific-computing, hpc, workflow |
+| 蛋白质设计、蛋白结构预测、蛋白质工程 | protein-design, protein-structure-prediction |
+| 分子动力学、分子模拟、分子对接、自由能计算 | molecular-dynamics, docking, free-energy |
+| 生物信息学、结构生物信息学 | bioinformatics |
+| DFT 计算、密度泛函、量子化学、第一性原理、电子结构 | dft, density-functional-theory, quantum-chemistry |
+| 高通量计算 / 筛选、材料计算 | high-throughput, materials-science |
+
+**GitHub 侧**：仓库的 description 与 topics 决定搜索命中。发布后执行（需要 `gh` 已登录）：
+
+```bash
+gh repo edit YueSunhao/afgo-dsh \
+  --description "AsterFire Go 科学计算插件：蛋白质设计·分子动力学·生物信息学·DFT/量子化学 | DSH plugin + Agent Skill" \
+  --add-topic science-computing --add-topic computational-chemistry \
+  --add-topic quantum-chemistry --add-topic density-functional-theory \
+  --add-topic molecular-dynamics --add-topic protein-design \
+  --add-topic bioinformatics --add-topic materials-science \
+  --add-topic dsh --add-topic dsh-plugin --add-topic deepseek-harness \
+  --add-topic agent-skill --add-topic asterfire --add-topic hpc
+```
+
+**npm 侧**：`keywords` 已写入 `package.json`，`npm publish` 后即可被 npm search 检索。
+
+**模型侧**：DSH 里工具是按 `description` 路由的，所以即使不搜仓库，说一句「用星使跑个分子动力学」也会命中 `afg_tasks` / `afg_platform`。
+
 ## 兼容性说明
 
-- **已实测**：DSH 安装后能在技能目录中加载并正常调用（含一次完整的 Kit 计算与结果下载）。
+- **DSH 插件（bundle）**：已在本机 `--profile desktop` 实际安装成功，`afgo-dsh` 同时进入 `dependencies`（`link:` 指向仓库）与 `dsh.profile.bundles`。**工具注册需重启 DSH 后生效**——这一步未替用户执行。
+- **DSH 技能**：已实测加载并跑通一次完整 Kit 计算与结果下载。
 - **WorkBuddy**：其应用包内 `createSkillsDomainService` 的 `skillsDir` 解析为 `<configDir>/skills`（即 `~/.workbuddy/skills`），与本包的目录约定一致；技能格式（`SKILL.md` + `name`/`description`）与其 46 个内置技能完全相同。**加载动作需重启 WorkBuddy 后确认**，本仓库未在 WorkBuddy 内实跑。
 - 其他 Agent 按其官方技能目录约定放置即可；没有 shell 执行能力的 Agent 只能读 `SKILL.md`，无法真正调用 API。
 
@@ -271,6 +345,9 @@ afg raw GET /tasks --query type=kit         # 任意端点兜底
 
 ```
 .
+├── package.json             # npm 包 + dsh.bundle.patch 声明（插件入口）
+├── cordis.patch.yml         # bundle 补丁：把 afgo 行插进 DSH loader
+├── lib/index.js             # 原生工具注册（afg_platform / files / tasks / workflows / raw）
 ├── SKILL.md                 # 技能入口（命令地图、平台语义、坑）
 ├── README.md
 ├── CHANGELOG.md
@@ -284,8 +361,10 @@ afg raw GET /tasks --query type=kit         # 任意端点兜底
 │   └── openapi.json         # 平台官方 OpenAPI 规范快照
 ├── examples/
 │   └── kit-input-dssp.json  # 一个真实可跑的 Kit 输入示例
-└── .github/workflows/ci.yml # 语法 + CLI + JSON + frontmatter + 凭据泄漏
+└── .github/workflows/ci.yml # Python 语法、Node 语法、CLI、JSON、frontmatter、凭据泄漏
 ```
+
+插件与技能共用同一份 `scripts/afg.py`：插件通过 `node:child_process` 调它，技能通过 `run.sh` / `run.ps1` 调它，不存在两份实现漂移。
 
 ## 免责声明
 

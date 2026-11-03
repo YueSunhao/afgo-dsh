@@ -1,7 +1,7 @@
 ---
 name: afg
-description: "Drive AsterFire Go (星使智算平台, sidereus-ai.com) from the terminal: cloud disk upload/download, Agent 任务, Kit 计算, 工作流, 开发者镜像. Use whenever the user wants to run something on AsterFire Go / 星使 / AFG — 上传结构文件、提交蛋白结构预测或分子动力学任务、跑某个 Kit、查询任务状态、下载结果、列 Agent/Kit 清单 — or asks what agents/kits the platform offers, or hands over an AsterFire API token to configure. Also use when someone references the asterfire CLI but it is not installed: this skill talks to the same Open API v1 directly with plain Python, no Go binary and no pip install needed."
-description_en: "Operate the AsterFire Go science-computing platform (sidereus-ai.com) from a terminal: upload structures, submit Agent/Kit jobs, inspect task status, download results, manage workflows. Same stable HTTP API the official asterfire CLI wraps, but pure Python stdlib — no Go binary, no pip install."
+description: "星使智算 / AsterFire Go / AFGO 科学计算平台的调用入口：把云端科学计算当作本地命令用 —— 蛋白质设计、蛋白质结构预测、分子动力学模拟、分子对接、自由能计算、生物信息学分析、DFT 计算 / 密度泛函 / 量子化学 / 第一性原理、高通量筛选、材料计算。用于上传结构文件、提交 Agent 或 Kit 任务、查询任务状态、下载计算结果、编排多步工作流、列出平台上的 Agent/Kit 目录。当用户提到『科学计算』『跑个计算』『蛋白质设计』『分子动力学』『DFT』『量子化学』『生信分析』『星使/AsterFire/AFGO』，或要求把某个结构交给云端算、并取回轨迹/报告/图表时使用。同样适用于官方 asterfire CLI 未安装的场景：本技能直连同一套 Open API v1，纯 Python 标准库，无需 Go 二进制、无需 pip 安装。"
+description_en: "Run cloud science computing from the terminal via AsterFire Go (星使智算): protein design and structure prediction, molecular dynamics, docking, free-energy calculations, bioinformatics, DFT / density-functional / quantum-chemistry workflows, high-throughput screening, materials computation. Upload structures, submit Agent/Kit jobs, poll status, fetch results, and orchestrate multi-step workflows. Same stable Open API v1 the official asterfire CLI wraps, but pure Python stdlib — no Go binary, no pip install."
 ---
 
 # AFG — AsterFire Go 平台操作

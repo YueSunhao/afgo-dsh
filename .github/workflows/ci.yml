@@ -30,6 +30,24 @@ jobs:
           python scripts/afg.py --help
           python scripts/afg.py tasks --help
 
+      - name: Bundle manifest
+        run: |
+          node --check lib/index.js
+          python - <<'PY'
+          import json, pathlib
+          pkg = json.loads(pathlib.Path("package.json").read_text(encoding="utf-8"))
+          assert pkg["name"] == "afgo-dsh", pkg.get("name")
+          assert pkg["main"] == "lib/index.js", pkg.get("main")
+          patch = pkg["dsh"]["bundle"]["patch"]
+          assert pathlib.Path(patch).is_file(), patch
+          assert "lib" in pkg["files"] and "scripts" in pkg["files"], pkg["files"]
+          assert len(pkg["keywords"]) >= 20, len(pkg["keywords"])
+          text = pathlib.Path("cordis.patch.yml").read_text(encoding="utf-8")
+          assert "afgo-dsh" in text, "cordis patch 未引用包名"
+          assert "id: afgo" in text, "cordis patch 缺少插件行 id"
+          print("bundle manifest ok:", pkg["name"], pkg["version"], len(pkg["keywords"]), "keywords")
+          PY
+
       - name: Validate JSON assets
         run: |
           python - <<'PY'

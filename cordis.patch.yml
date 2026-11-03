@@ -1,0 +1,21 @@
+# afgo-dsh — AsterFire Go（星使智算）bundle patch
+#
+# 只做一件事：把插件行插进 loader。真正的工具注册在 lib/index.js。
+#
+# 配置说明：
+#   python     解释器路径。留空则自动探测（python / python3 / py -3，会跳过
+#              Windows 应用商店的假壳子）。也可用绝对路径锁定。
+#   baseUrl    API 根地址，默认生产环境。不要带 /open/v1，插件会自己拼。
+#   token      一般留空：令牌从 ~/.afg/config.json 或 AFG_TOKEN 读取，
+#              写在这里会随 profile 的 package.json 一起落盘，不推荐。
+#   timeoutMs  单次命令超时，默认 120000。
+#
+# 注意：patch 会整体替换目标行的 config，profile 里若要覆盖某项，需把其余项一并重述。
+- insert:
+    - id: afgo
+      name: afgo-dsh
+      config:
+        python: ""
+        baseUrl: "https://sidereus-ai.com/api"
+        token: ""
+        timeoutMs: 120000
