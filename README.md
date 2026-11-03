@@ -18,7 +18,7 @@
 | 依赖 | 无（Go 静态编译） | Python 3.8+（标准库） |
 | 覆盖能力 | 71 个业务操作 | 74 个端点（挂在 `/openapi.json` 上，全部枚举） |
 | 大文件分片上传 | 支持 | 暂不支持（见[已知限制](#已知限制)） |
-| 作为 DSH 技能 | 需自行包装 | 原生就是技能 |
+| 作为 Agent 技能 | 需自行包装 | 原生就是技能（DSH / WorkBuddy / Claude Code …） |
 
 两者可以共存：`afg` 不会碰 `~/.asterfire/` 下的官方配置（除非你没写自己的配置，它会回退去读）。
 
@@ -36,6 +36,42 @@
 | 兜底 | `raw <METHOD> <PATH>` 直接打任意端点 |
 
 完整的 74 个操作、参数和请求体字段见 [`reference/api.md`](reference/api.md)，原始契约见 [`reference/openapi.json`](reference/openapi.json)。
+
+## 调用路径
+
+一次调用从头到尾只经过三跳，没有中间服务：
+
+```
+┌──────────────────────┐  ① 读 SKILL.md   ┌──────────────────────┐
+│  DSH / WorkBuddy /   │ ───────────────▶ │  Agent 决定用 afg    │
+│  Claude Code / …     │                  └──────────┬───────────┘
+└──────────────────────┘                             │ ② 执行 shell
+                        ┌────────────────────────────▼───────────────────────────┐
+                        │ scripts/run.sh  (POSIX)  /  scripts/run.ps1  (Windows) │
+                        │        └──▶ scripts/afg.py -- 纯标准库，不装任何包       │
+                        └────────────────────────────┬───────────────────────────┘
+                                                     │ ③ HTTPS
+                                                     │   Asterfire-Token: <token>
+                                                     ▼
+                              https://sidereus-ai.com/api/open/v1/<path>
+                                                     │
+                                                     ▼
+                                          星使智算平台（真正的计算在这里）
+```
+
+具体到一次请求：
+
+```
+afg tasks status 55712 --json
+  → GET https://sidereus-ai.com/api/open/v1/tasks/55712/status
+    headers: { "Asterfire-Token": <token>, "Accept": "application/json" }
+  ← 200 {"success":true,"data":{"is_thinking":false, …}}
+```
+
+- **Base URL**：`https://sidereus-ai.com/api`，程序自动拼上 `/open/v1`；可用 `--base-url` / `AFG_BASE_URL` 改。
+- **认证**：只需要 `Asterfire-Token` 一个请求头，无 OAuth、无 cookie、无浏览器登录。
+- **响应信封**：恒为 `{success, data}`；错误为 `{success:false, error:{code,message,details,request_id}}` 并附 `status_code`。
+- **端点映射**：CLI 子命令 → REST 路径的对照表在 [`reference/api.md`](reference/api.md)，每个操作的参数、请求体字段都可查。
 
 ## 快速开始
 
@@ -191,12 +227,39 @@ afg raw GET /tasks --query type=kit         # 任意端点兜底
 | `wf import` / `replace-yaml` | 请求体按 `{"yaml": "..."}` 组装，字段名未经实机验证。导入前先 `wf validate-yaml`。 |
 | 团队/协作路径 | `workspace_id` 参数原样透传，但在无团队的账号上未验证。 |
 
-## 环境要求
+## 依赖
 
-- Python 3.8+，无第三方依赖（Windows / macOS / Linux 均可）
-- 网络能访问 `https://sidereus-ai.com`
+**运行时零依赖**：只用 Python 标准库（`urllib` / `json` / `argparse` / `pathlib` 等），没有 `requirements.txt`、没有 `pyproject.toml`，**不需要 `pip install` 任何东西**。
+
+| 类别 | 要求 |
+|---|---|
+| Python | 3.8+（实测 3.11；`run.sh` / `run.ps1` 会自动挑一个真能跑的解释器） |
+| 第三方包 | 无 |
+| 网络 | HTTPS 出站可达 `sidereus-ai.com` |
+| 平台 | Windows / macOS / Linux 均可 |
+| 账号 | 一个有效的 AsterFire API 令牌（平台侧，不落盘在仓库里） |
+| 平台侧依赖 | 无 —— 分子动力学、结构预测等计算全部在星使智算的集群上跑，本地只负责发请求和收结果 |
+
+可选：装个 `jq` 方便自己在 shell 里裁 JSON（本项目自身不依赖它，`--json` 输出已经够用）。
+
+## 环境注意事项
+
 - 启动器会跳过「存在但跑不起来」的解释器并自动降级；也可用 `AFG_PYTHON` 强制指定
 - Windows PowerShell 用户注意：内联 JSON 会被吃掉引号，一律把参数写进文件用 `--input @params.json`
+
+## 相关链接
+
+| 用途 | 链接 |
+|---|---|
+| 平台官网（注册、取令牌） | <https://sidereus-ai.com> |
+| OpenAPI 交互文档（Swagger UI，可直接试调） | <https://sidereus-ai.com/api/open/v1/docs> |
+| OpenAPI 规范原文（本仓库快照的来源） | <https://sidereus-ai.com/api/open/v1/openapi.json> |
+| 官方 CLI 使用指南（飞书文档） | <https://sidereus-ai.feishu.cn/wiki/WKbSwmulLi9zGDkTvE3cGAhHnPh> |
+| 官方 CLI 发布日志（版本变更、破坏性变更） | <https://sidereus-ai.feishu.cn/wiki/HqypwisPAi5UdlkmZZ4cXDFVnjg> |
+| 官方 CLI 二进制 | 在上面的「发布日志」页附件里，需登录飞书账号下载（本包用不到） |
+
+> 飞书文档属于平台方的租户空间，可能要求登录或权限；Swagger UI 与 `openapi.json` 是公开的，随时可访问（2026-11 复核均为 200）。
+> 取令牌：登录官网 → 右上角用户头像 → **API令牌** → 新建 → 复制完整令牌。
 
 ## 兼容性说明
 

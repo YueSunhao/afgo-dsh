@@ -145,3 +145,13 @@ afg wf node-outputs <plan_id> <node_id> --execution-id <execution_id> --json
 - `403` → 账号权限不足（团队资源、开发者资源），不是令牌问题。
 - `找不到 Python 3` → 设 `AFG_PYTHON` 指向解释器绝对路径，或改用 `<skill-dir>/scripts/afg.py` 直接调用。
 - 探测连通性：`afg raw GET /health --json` 应回 `{"status":"ok"}`。
+
+## 参考资料
+
+- 端点参数参考（本目录）：`reference/api.md` —— 74 个操作的参数与请求体字段
+- OpenAPI 规范快照（本目录）：`reference/openapi.json`；落后时用
+  `curl -s https://sidereus-ai.com/api/open/v1/openapi.json -o reference/openapi.json` 重新拉
+- OpenAPI 交互文档（浏览器里可直接试调）：<https://sidereus-ai.com/api/open/v1/docs>
+- 官方 CLI 使用指南（飞书，需登录）：<https://sidereus-ai.feishu.cn/wiki/WKbSwmulLi9zGDkTvE3cGAhHnPh>
+- 官方 CLI 发布日志（飞书，破坏性变更看这里）：<https://sidereus-ai.feishu.cn/wiki/HqypwisPAi5UdlkmZZ4cXDFVnjg>
+- 本仓库 README：安装矩阵、调用路径图、已知限制与兼容性说明
