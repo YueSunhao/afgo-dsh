@@ -175,17 +175,17 @@ dsh plugin --profile desktop add github:YueSunhao/afgo-dsh
 
 ```bash
 # 以 DSH 为例；换成上表任意目录即可
-git clone <本仓库地址> ~/.dsh/skills/afg
+git clone https://github.com/YueSunhao/afgo-dsh ~/.dsh/skills/afg
 
 # WorkBuddy
-git clone <本仓库地址> ~/.workbuddy/skills/afg
+git clone https://github.com/YueSunhao/afgo-dsh ~/.workbuddy/skills/afg
 ```
 
 Windows PowerShell：
 
 ```powershell
-git clone <本仓库地址> "$env:USERPROFILE\.dsh\skills\afg"
-git clone <本仓库地址> "$env:USERPROFILE\.workbuddy\skills\afg"
+git clone https://github.com/YueSunhao/afgo-dsh "$env:USERPROFILE\.dsh\skills\afg"
+git clone https://github.com/YueSunhao/afgo-dsh "$env:USERPROFILE\.workbuddy\skills\afg"
 ```
 
 装好后直接说「帮我用 AsterFire 跑个 DSSP」，Agent 会自动加载 `SKILL.md` 里的命令地图。
