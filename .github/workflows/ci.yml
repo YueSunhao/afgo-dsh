@@ -10,8 +10,11 @@ permissions:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    # Python 3.8 is EOL and absent from the newest runner image (ubuntu-26.04),
+    # so keep it on 22.04 while newer interpreters use latest.
+    runs-on: ${{ matrix.python-version == '3.8' && 'ubuntu-22.04' || 'ubuntu-latest' }}
     strategy:
+      fail-fast: false
       matrix:
         python-version: ["3.8", "3.11", "3.13"]
     steps:
