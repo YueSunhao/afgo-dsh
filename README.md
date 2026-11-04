@@ -1,5 +1,10 @@
 # afgo-dsh — AsterFire Go（星使智算）DSH 插件 · 通用 Agent 技能
 
+[![ci](https://github.com/YueSunhao/afgo-dsh/actions/workflows/ci.yml/badge.svg)](https://github.com/YueSunhao/afgo-dsh/actions/workflows/ci.yml)
+[![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![python](https://img.shields.io/badge/python-3.8%2B-blue.svg)](scripts/afg.py)
+[![node](https://img.shields.io/badge/node-%E2%89%A522.19-339933.svg)](package.json)
+
 一个仓库，两种用法，底层是**同一份纯 Python 标准库客户端**：
 
 | 用法 | 安装 | 生效方式 |
@@ -127,12 +132,14 @@ python3 scripts/afg.py cloud download <文件id> -o report.md
 ## 作为 DSH 插件安装（bundle）
 
 ```bash
-# npm（发布后）
-dsh plugin --profile desktop add afgo-dsh
-
-# 本地仓库 / GitHub 直装
-dsh plugin --profile desktop add /path/to/afgo-dsh
+# 从 GitHub 直装（现在就能用，已实测）
 dsh plugin --profile desktop add github:YueSunhao/afgo-dsh
+
+# 本地仓库（开发时）
+dsh plugin --profile desktop add /path/to/afgo-dsh
+
+# npm（发布后可用）
+dsh plugin --profile desktop add afgo-dsh
 ```
 
 装完 **必须重启 DSH**，插件在进程内加载，不重启不会出现。装好后工具列表里会有五个原生工具：
