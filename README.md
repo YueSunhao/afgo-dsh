@@ -42,6 +42,7 @@
 | Agent 任务 | `tasks create` / `send` / `list` / `get` / `status` / `files` / `stop` / `rename` / `delete` |
 | Kit 计算 | `kits submit`（新任务）/ `kits run`（挂在已有任务里） |
 | 工作流 | `wf` 全套：创建、校验、执行、状态、执行记录、谱系、节点输出/日志/重试/停止/输入、导入导出 YAML、模板市场 |
+| 智算会话 | `wf session`：建方案、建会话、发送消息、查询历史、读取事件和中断生成 |
 | 开发者 | `dev` 镜像与工具包（需账号具备开发者权限） |
 | 兜底 | `raw <METHOD> <PATH>` 直接打任意端点 |
 
@@ -149,7 +150,7 @@ dsh plugin --profile desktop add afgo-dsh
 | `afg_platform` | 账号、模型、Agent / Kit 目录与输入 schema、健康检查 | `info` `models` `agents` `kits` `kit_schema` `health` |
 | `afg_files` | 云盘上传 / 下载 / 列举 | `upload` `download` `list` |
 | `afg_tasks` | Agent 任务与 Kit 提交、跟踪、取产物 | `create` `send` `get` `status` `files` `kit_submit` `kit_run` … |
-| `afg_workflows` | 多步工作流定义、校验、执行、节点输出 | `create` `validate` `execute` `status` `node_outputs` … |
+| `afg_workflows` | 工作流定义、执行和智算会话 | `create` `validate` `execute` `status` `node_outputs` `session_*` … |
 | `afg_raw` | 任意端点兜底 | 任意 `METHOD + path` |
 
 插件配置写在 `cordis.patch.yml` 的 `insert` 行里（`~/.dsh/profiles/desktop/cordis.patch.yml` 可覆盖）：
@@ -168,6 +169,14 @@ dsh plugin --profile desktop add afgo-dsh
 令牌**不要**写进 `token` 字段——那会随 profile 的 `package.json` 落盘。放在 `~/.afg/config.json` 或 `AFG_TOKEN` 环境变量里。
 
 > **本地开发注意**：`dsh plugin add <目录>` 会被 pnpm 装成 **junction / 符号链接**，而 Node 按真实路径解析 `@deepseek-ai/dsh-tools`，从 `E:\...` 往上找不到 profile 的 peer，会报 `ERR_MODULE_NOT_FOUND`。要么用 tarball 装（`npm pack` 后 `dsh plugin add ./afgo-dsh-1.2.0.tgz`），要么走 `github:` / npm——那两条路装的是实体目录，能正常解析。
+
+### 在 DSH 插件页使用工作台
+
+在 DSH Web 中打开 **插件 → afgo-dsh → AsterFire Go 工作台**。已验证的宿主版本为 `0.2.1-rc.5`，工作台使用该版本的插件配置页和宿主凭据服务。
+
+1. 在工作台填写自己的 API Key，点 **验证并保存**。通过账号验证后，DSH 按当前 API 环境保存 Key，页面只显示账号信息。
+2. 搜索 Kit 或 Agent，或者打开 **TiO₂ (110) 官方样例**。核对官方参数和平台费用说明后提交。
+3. 在 **我的任务** 查看状态和产物。重新打开工作台时会恢复上次提交的任务，也可从最近 Kit 任务或任务编号找回。单个产物最多通过工作台下载 4 MiB，较大的文件可到星使智算网页端下载。
 
 ## 作为 Agent 技能安装
 
@@ -224,7 +233,7 @@ python  scripts\afg.py info
 afg info                                    # 当前账号
 afg models                                  # 可用模型
 afg agents --query gromacs --limit 5        # 找 Agent
-afg kits list --query antibody              # 找 Kit
+afg kits list --query antibody              # 找 Kit（默认按名字折叠同名多版本）
 afg kits schema DSSP                        # Kit 的输入要求
 
 afg cloud upload protein.pdb                # -> {"id": ...}
@@ -234,7 +243,7 @@ afg cloud download <file_id> -o out.pdb     # 下载
 afg tasks create --toolbox <agent> \
     --message "分析这个结构" --file <file_id> --llm-model deepseek-v4-pro
 afg tasks send <task_id> --message "再补一个 RMSF"
-afg tasks get <task_id>                     # 步骤、消息、状态
+afg tasks get <task_id>                     # 步骤、消息、状态 + outcome 判定
 afg tasks files <task_id> [子路径]           # 产物清单
 afg tasks stop <task_id>
 
@@ -247,16 +256,36 @@ afg wf validate <plan_id>
 afg wf execute <plan_id>                    # -> execution_id
 afg wf exec-status <plan_id> <execution_id>
 afg wf node-outputs <plan_id> <node_id> --execution-id <execution_id>
+afg wf delete <plan_id> --yes
 
 afg raw GET /tasks --query type=kit         # 任意端点兜底
 ```
 
-`--json` 输出紧凑单行（放子命令前后都行），不加则缩进。退出码：`0` 成功、`1` 接口/网络错误、`2` 参数错误。
+### 目录版本与智算会话
+
+- `agents` 和 `kits list` 支持按注册名、展示名、描述和标签搜索。`version_source` 标记版本来源，优先读取平台字段，其次参考该工具的图标或官方样例资产路径。`--all-versions`（DSH `all_versions`）可查看每条记录。
+- `kits schema <注册名> --version <版本>` 查看对应的目录 schema。提交接口按注册名解析工具。目录中存在多份不同的 schema 时，默认会拦截提交，请先核对该环境实际使用的 schema。
+- 智算会话按官方示例向 `/api` 发送 `Authorization: Bearer`。优先读取 `AFG_SESSION_TOKEN`，否则使用当前令牌。常规 Open API 仍用 `Asterfire-Token`。创建方案返回 `id`，创建会话返回 `opencode_session_id`。发消息的响应表示受理，回复用 `messages` 查询。历史分页读取返回的 `next_cursor`，下一次传 `--before`。
+
+```bash
+afg wf session plan-create --title "计算方案" --prompt "描述计算需求"
+afg wf session create <plan_id>
+afg wf session list <plan_id>
+afg wf session send <session_id> --message "补充计算需求"
+afg wf session messages <session_id> --limit 20
+afg wf session events <session_id> --limit 10 --seconds 5
+afg wf session abort <session_id>
+```
+
+DSH 使用 `afg_workflows` 的 `session_plan_create`、`session_create`、`session_list`、`session_send`、`session_messages`、`session_events` 和 `session_abort`。`session_events` 在一次调用中返回一批 SSE 事件。旧 Agent 的 `afg_tasks create/send` 仍使用原有任务接口。
+
+`--json` 输出紧凑单行（放子命令前后都行），不加则缩进。退出码：`0` 成功、`1` 接口/网络错误（含 `wf validate` 判定有阻塞问题）、`2` 参数错误。
 
 ## 平台语义要点
 
 - **六种 ID 不能混**：`file_id`、`task_id`、`step_id`、`plan_id`（工作流定义）、`execution_id`（一次运行）、`node_id`。节点类查询必须同时给 `plan_id + node_id + execution_id`，查日志还要 `step_id`。
-- **一切皆异步**：`tasks create` / `kits submit` / `wf execute` 返回成功只代表请求被受理，不代表算完。`is_thinking=false` 也不等于成功，要再看步骤和产物。
+- **一切皆异步**。`tasks create` / `kits submit` / `wf execute` 成功返回时，平台已受理请求。通过 `tasks get` 查看任务的 `outcome`，区分 `success`、`partial`、`failed` 和 `unknown`。写入时发生网络错误，应先查询平台状态再决定是否重试。
+- **提交前校验**。`kits submit` 和 `kits run` 都要求 JSON 对象，并按 `input_schema` 检查必填项和枚举值。CLI 的 `--force` 只跳过 schema 检查。
 - **JSON 字段大小写不统一**：`taskId` 和 `is_thinking` 并存。先跑一次看真实结构，别凭记忆写解析。
 
 ## 配置与安全
@@ -270,7 +299,9 @@ afg raw GET /tasks --query type=kit         # 任意端点兜底
 
 | 限制 | 说明 |
 |---|---|
-| Kit 的 file 字段只吃公网 URL | 传云盘数字 `file_id` 能过校验但运行期报 `输入结构文件不存在或为空`；传文件名会 500。跑自带本地文件的 Kit 请先把文件放到可访问 URL，或改用 Agent 任务（`tasks create --file <file_id>`）。 |
+| Kit 的 file 字段 | 字符串 `file_id` 实测会被解析成真实文件；**JSON 数字 id 不会**（原样传入后运行期报文件不存在），文件名或坏 id 直接 500。字段名必须与 `input_schema` 一致，写错会被静默忽略。稳妥顺序：字符串 id → 公网 URL → Agent 任务（`tasks create --file <file_id>`）。 |
+| 云盘文件名只保留 ASCII | 平台的 multipart 解析会丢掉非 ASCII 字节，中文名会被改写成残缺英文名；`cloud upload` 会在 `warnings` 里提示。建议用英文文件名。 |
+| 工作流状态接口 500 | `wf status` / `wf exec-status` 对已有 execution 的流程稳定 500；CLI 自动降级到 `wf execution`，结果带 `degraded: true` 与 `nodes[].status`。 |
 | 没有分片上传 | 单次 multipart 上传，没有实现 `/cloud-disk/uploads*` 的分片会话。几十 MB 够用，上百 MB 建议用官方 CLI。 |
 | `/dev/*` 需要开发者权限 | 普通账号返回 403，不是令牌问题。 |
 | `wf tools` 服务端 500 | 平台侧问题（实测可复现），用 `wf tool-contract <name>` 或 `agents --full` 里的 `long_description` 替代。 |

@@ -29,7 +29,7 @@ ln -s <skill-dir>/scripts/afg.py ~/bin/afg
 
 启动器按 `AFG_PYTHON` → `python3` / `python` / `py -3` 的顺序找一个可用的 Python 3，找不到会以退出码 2 报错。要求 Python 3.8+，只用标准库。
 
-先跑 `info` 确认令牌有效：能返回 `username`、`tier`、`workspaces` 就是通的。`--json` 输出紧凑单行（放在子命令前后都行），不加则缩进。退出码 `0` 成功、`1` 接口或网络错误、`2` 参数错误——脚本里靠退出码判断，不要靠输出文本。
+先跑 `info` 确认令牌有效：能返回 `username`、`tier`、`workspaces` 就是通的。`--json` 输出紧凑单行（放在子命令前后都行），不加则缩进。退出码 `0` 成功、`1` 接口或网络错误（**也包括 `wf validate` 判定存在阻塞问题**）、`2` 参数错误——脚本里靠退出码判断，不要靠输出文本。`wf validate` 的结果体里另有 `valid` / `blocking_count`：含 `blocks_execute=true` 的 issue 时退出码为 1，但 body 仍是正常结果，不是异常。
 
 ## 配置
 
@@ -50,19 +50,21 @@ ln -s <skill-dir>/scripts/afg.py ~/bin/afg
 | 当前账号 | `info` |
 | 可用模型 | `models` |
 | Agent 清单 | `agents [--query 关键词] [--limit N] [--full]` |
-| Kit 清单 | `kits list [--query] [--limit N] [--full]` |
+| Kit 清单 | `kits list [--query] [--limit N] [--full] [--all-versions]`（默认按名字折叠多版本） |
 | Kit 输入要求 | `kits schema <kit_name>` |
 | 云盘列表 | `cloud list [--parent-id] [--workspace-id] [--q]` |
 | 上传文件 | `cloud upload <本地路径>` → 记住返回的 `id` |
 | 下载文件 | `cloud download <file_id> -o <本地路径>` |
 | 建 Agent 任务 | `tasks create --toolbox <agent> --message "..." [--file <file_id> ...] [--llm-model <m>]` |
-| 任务列表 / 详情 / 状态 | `tasks list` · `tasks get <id>` · `tasks status <id> [--step-id]` |
+| 任务列表 / 详情 / 状态 | `tasks list` · `tasks get <id>`（含 `outcome` 判定）· `tasks status <id> [--step-id]` |
 | 任务结果文件 | `tasks files <task_id> [子路径]` |
 | 继续对话 | `tasks send <id> --message "..."` |
 | 停止 / 改名 / 删除 | `tasks stop <id>` · `tasks rename <id> 新名` · `tasks delete <id> --yes` |
 | 直接跑 Kit | `kits submit --kit <kit> --input @params.json` |
 | 在已有任务里跑 Kit | `kits run <task_id> --kit <kit> --input @params.json` |
 | 工作流 | `wf list/create/get/execute/status/executions/execution/exec-status/lineage` |
+| 智算会话 | `wf session plan-create` → `wf session create <plan_id>` → `wf session send <session_id> --message "需求"` → `wf session messages <session_id>` |
+| 删除工作流 | `wf delete <plan_id> --yes` |
 | 节点 | `wf node-outputs/node-execution/node-logs/node-retry/node-stop/node-input` |
 | 流程工具与模板 | `wf tools` · `wf tool-contract <name>` · `wf templates` · `wf use-template <id>` |
 | 任意端点兜底 | `raw GET /tasks --query type=kit` · `raw POST /kits/submit --body @body.json` |
@@ -108,14 +110,18 @@ afg wf node-outputs <plan_id> <node_id> --execution-id <execution_id> --json
 ## 平台语义（最容易踩的坑）
 
 - **ID 有六种，别混**：`file_id`（云盘/上传）、`task_id`（Agent 或 Kit 任务）、`step_id`（一次工具执行）、`plan_id`（工作流定义）、`execution_id`（工作流某次运行）、`node_id`（流程节点）。节点类查询**必须同时**带 `plan_id + node_id + execution_id`，查日志还要 `step_id`。
-- **异步**：`tasks create` / `kits submit` / `wf execute` 返回 200 只代表**请求被接受**，不代表算完。`is_thinking=false` 也**不等于**成功，要再看 `steps` 和 `tasks files` 有没有产物。
+- **异步**。`tasks create` / `kits submit` / `wf execute` 成功返回时，平台已受理请求。用 `tasks get` 查看 `outcome`（`success` / `partial` / `failed` / `unknown`），并核对步骤和产物。写入时发生网络错误，应先查询平台状态再决定是否重试。
 - **参数名大小写不统一**：同一平台里 `taskId` 和 `is_thinking` 并存。读字段前先 `--json` 看一次真实结构，别凭记忆写解析逻辑。
+- **目录版本**。`agents` 和 `kits list` 支持搜索展示名，提交使用注册名。用 `kits schema <注册名> --version <版本>` 检查特定目录版本，版本来自资产路径时以 `version_source` 为准。智算会话 ID 取自 `opencode_session_id`，消息分页使用 `next_cursor`。
 - **`--file` 在 `tasks create/send` 里是平台 file_id，不是本地路径**；本地的文件先 `cloud upload`。`wf node-input --file` 才是本地路径。
-- **Kit 的 file 字段只吃公网 URL**（`https://…`），平台会把它下载进任务目录再跑。传云盘数字 file_id 能过校验但运行期报 `输入结构文件不存在或为空: <id>`；传文件名会直接 500。所以要跑自带本地文件的 Kit，先把文件放到可访问的 URL，或改走 Agent 任务（`tasks create --file <file_id>` 这条路径是官方文档写明的）。
+- **Kit 的 file 字段：字符串 `file_id` 实测可被解析**（2026-11 复核：DSSP、pdb2pqr、PDBFixer-kit 都把它换成了真实文件）。但边界很脆：传 **JSON 数字** id 不会被解析（原样传入，运行期报文件不存在）；传**文件名**或不存在的 id 直接 500；字段名必须与 `input_schema` 一致，写错会被静默忽略。稳妥顺序：字符串 id → 可访问 URL → 改走 Agent 任务（`tasks create --file <file_id>`）。
 - **`cloud upload` 的返回是 `data.file`**（真实 id 在 `data.file.id`），不是文档里写的顶层 `.id`。本技能的 `afg cloud upload` 已经把这一层压平，直接输出文件对象。
 - **Windows 上不要写内联 JSON**：`--input '{"a":1}'` 会被 PowerShell 5.1 的引号处理弄坏。一律写 `params.json` 再 `--input @params.json`（本技能会给出这个提示）。
-- **`kits submit` 的 input 结构由每个 kit 的 `input_schema` 决定**，不要照抄别的 kit 的示例（比如不是所有 kit 都吃 `sequence`）。
-- **错误 JSON**：`success:false` + `error{code,message,details,request_id}`；HTTP 码同时给出 `status_code`。`request_id` 报给平台客服时有用，值得原样保留。
+- **`kits submit` 的 input 结构由每个 kit 的 `input_schema` 决定**，不要照抄别的 kit 的示例。提交前 CLI 会按 schema 校验必填项与枚举值，不通过会直接报错（`--force` 跳过）；平台本身不校验，错了要等跑完才知道。
+- **错误 JSON**：`success:false` + `error{code,message,details,request_id}`；HTTP 码同时给出 `status_code`。`request_id` 报给平台客服时有用，值得原样保留。本 CLI 已把 `error_code` / `request_id` 提到顶层，并会拼进一句话错误里。
+- **工作流状态接口可能 500**：`wf status` / `wf exec-status` 对"有真实 execution"的流程会返回 500，而 `wf execution` 正常。CLI 已自动降级：结果里带 `degraded: true`、`plan_status` 和 `nodes[].status`，看到 `degraded` 就知道走了兜底路径，别把它当成接口正常。
+- **`wf validate` 以 `blocks_execute` 为准**：结果体有 `valid` / `blocking_count`；含阻塞项时退出码为 1。不要用 HTTP 200 或"有没有 issues"判断可执行性。
+- **云盘上传只保留 ASCII 文件名**：平台的 multipart 解析会丢掉非 ASCII 字节（连 `%` 也吞），中文名会被静默改写成残缺英文名。`cloud upload` 会在 `warnings` 里提示；建议直接用英文文件名。
 - **权限**：`/dev/*`（镜像、开发者工具包）需要开发者权限，普通账号会 403 —— 这不是令牌坏了。`info` 里的 `user_type`/`tier` 能看出账号档位。
 
 ## 已知限制（实现或服务端）

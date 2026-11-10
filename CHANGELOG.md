@@ -2,6 +2,25 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [未发布]
+
+### 修复
+
+- `wf status` / `wf exec-status`：平台对已有 execution 的流程稳定返回 500，现自动降级到 `wf execution`，结果带 `degraded: true` 与 `nodes[].status`。
+- `wf validate` / `validate-yaml`：以 `blocks_execute` 为准，结果体新增 `valid` / `blocking_count`；存在阻塞项时退出码为 1（此前恒为 0，脚本会漏判）。
+- 错误输出：`error_code` 与 `request_id` 提到顶层，DSH 插件把两者拼进用户可见的错误信息里。
+- `cloud download` 文件名：按 RFC 6266/5987 解析，优先 `filename*` 并做百分号解码，修复 `01.pdb"; filename*=UTF-8''01.pdb` 这类残缺文件名。
+- `cloud download` 失败：包装为一句人话（401/403/404 有中文提示，并带 `request_id`），不再抛出 Python 堆栈和本机绝对路径。
+- `cloud upload`：文件名含非 ASCII 字符时在结果里返回 `warnings`，提示平台会丢弃这些字符。
+- `tasks get` 新增 `outcome` 字段：按 `structured_output.success` / `status` / 数据字段 / 步骤异常综合判定 success/failed/unknown，避免把 COMPLETED 当成功。
+- `kits submit` 提交前按 `input_schema` 校验必填项、枚举取值与数值范围，缺字段直接报错（`--force` 可跳过）；未知字段以 `warnings` 返回。
+- `kits list` 默认按名字折叠同名多版本（开发环境 `RFdiffusion2` 曾重复 41 条），版本号收进 `versions`；`--all-versions` 保留原始条目。
+- `kits submit` 的 403/404 业务错误附加中文解释：前者是账号未授权，后者是目录有、服务端未注册；404 时再给出目录里的相近条目（实测 `RosettaInterfaceAnalyzer` 的真正注册名是 `RosettaInterfaceAnalyzer-kit`）。
+
+### 文档
+
+- SKILL.md / README 同步上述行为；Kit `file` 字段的说明改为实测边界（字符串 id 可用、数字 id 不可用）。
+
 ## [1.2.0] — 2026-11-04
 
 DSH 插件形态（bundle）+ 可检索性改造。同一仓库现在既能 `dsh plugin add`，也能 `git clone` 当技能用。

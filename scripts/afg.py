@@ -21,10 +21,15 @@ Exit codes: 0 ok · 1 api/runtime error · 2 usage/config error
 
 import argparse
 import base64
+import difflib
+import http.client
 import json
 import mimetypes
 import os
+import re
 import sys
+import time
+import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -79,8 +84,8 @@ class AfgError(Exception):
         self.payload = payload
 
 
-def _url(base, path, query):
-    url = base.rstrip("/") + API_PREFIX + path
+def _url(base, path, query, *, prefix=API_PREFIX):
+    url = base.rstrip("/") + prefix + path
     if query:
         clean = {k: v for k, v in query.items() if v is not None}
         if clean:
@@ -95,19 +100,31 @@ def _decode(body):
         return body.decode("utf-8", "replace")
 
 
-def request(method, path, *, query=None, body=None, files=None, token=None,
-            base=None, timeout=TIMEOUT, retries=2):
-    """Issue one API call. Returns the parsed body; headers land in LAST_HEADERS."""
-    token = token or load_config()["token"]
-    base = base or load_config()["base_url"]
+def _request_config(token, base):
+    cfg = load_config() if not token or not base else {}
+    token = token or cfg["token"]
+    base = base or cfg["base_url"]
     if not token:
         raise AfgError(
             "缺少 API 令牌。请先写入 ~/.afg/config.json，或设置环境变量 AFG_TOKEN，"
             "或使用 --token。", status=None)
+    return token, base
 
-    url = _url(base, path, query)
-    headers = {"Asterfire-Token": token, "Accept": "application/json",
-               "User-Agent": "afg-py/1.0 (dsh)"}
+
+def request(method, path, *, query=None, body=None, files=None, token=None,
+            base=None, timeout=TIMEOUT, retries=2, prefix=API_PREFIX, bearer=False,
+            event_limit=None):
+    """Issue one API call. Returns the parsed body; headers land in LAST_HEADERS."""
+    token, base = _request_config(token, base)
+    read_only = method.upper() in ("GET", "HEAD", "OPTIONS")
+    if not read_only:
+        retries = 0
+    url = _url(base, path, query, prefix=prefix)
+    headers = {"Accept": "application/json", "User-Agent": "afg-py/1.0 (dsh)"}
+    if not bearer:
+        headers["Asterfire-Token"] = token
+    if event_limit is not None:
+        headers["Accept"] = "text/event-stream"
     data = None
 
     if files:
@@ -123,9 +140,17 @@ def request(method, path, *, query=None, body=None, files=None, token=None,
             if not fp.is_file():
                 raise AfgError("文件不存在: %s" % fp)
             ctype = mimetypes.guess_type(fp.name)[0] or "application/octet-stream"
+            # Non-ASCII names must not travel bare in `filename=`: servers that
+            # decode the header as Latin-1 (or drop the bytes outright, as this
+            # one does) lose the name. RFC 6266/5987 carries it in `filename*`
+            # with the ASCII form kept as a fallback.
+            ascii_name = fp.name.encode("ascii", "ignore").decode("ascii").strip() or "file"
+            quoted_name = urllib.parse.quote(fp.name, safe="")
             chunks.append(("--%s\r\nContent-Disposition: form-data; name=\"%s\"; "
-                           "filename=\"%s\"\r\nContent-Type: %s\r\n\r\n"
-                           % (boundary, field, fp.name, ctype)).encode("utf-8"))
+                           "filename=\"%s\"; filename*=UTF-8''%s\r\n"
+                           "Content-Type: %s\r\n\r\n"
+                           % (boundary, field, ascii_name, quoted_name,
+                              ctype)).encode("utf-8"))
             chunks.append(fp.read_bytes())
             chunks.append(b"\r\n")
         chunks.append(("--%s--\r\n" % boundary).encode())
@@ -138,12 +163,18 @@ def request(method, path, *, query=None, body=None, files=None, token=None,
     last = None
     for attempt in range(retries + 1):
         req = urllib.request.Request(url, data=data, headers=headers, method=method)
+        if bearer:
+            req.add_unredirected_header("Authorization", "Bearer " + token)
         try:
             with urllib.request.urlopen(req, timeout=timeout) as resp:
-                raw = resp.read()
                 ctype = resp.headers.get("Content-Type", "")
                 LAST_HEADERS.clear()
                 LAST_HEADERS.update(dict(resp.headers))
+                if event_limit is not None:
+                    if not ctype.lower().startswith("text/event-stream"):
+                        raise AfgError("会话事件接口未返回 text/event-stream。")
+                    return _read_events(resp, event_limit, timeout)
+                raw = resp.read()
                 if "json" in ctype or raw[:1] in (b"{", b"["):
                     return _decode(raw)
                 return raw
@@ -160,12 +191,55 @@ def request(method, path, *, query=None, body=None, files=None, token=None,
                 msg = msg or payload.get("message") or payload.get("detail")
             raise AfgError(msg or ("HTTP %s %s" % (e.code, e.reason)), status=e.code,
                            payload=payload)
-        except urllib.error.URLError as e:
+        except (urllib.error.URLError, TimeoutError, ConnectionError,
+                http.client.HTTPException) as e:
             last = e
             if attempt < retries:
                 continue
-            raise AfgError("网络错误: %s" % (e.reason,))
+            reason = getattr(e, "reason", e)
+            if read_only:
+                raise AfgError("网络错误: %s" % reason) from None
+            raise AfgError(
+                "网络错误: %s。写入结果未知，请先查询平台状态再决定是否重试。" % reason
+            ) from None
     raise AfgError("网络错误: %s" % (last,))
+
+
+def _read_events(response, limit, timeout):
+    deadline = time.monotonic() + timeout
+    events, data = [], []
+    fields = {}
+    reason = "timeout"
+    total_bytes = 0
+    try:
+        while len(events) < limit and time.monotonic() < deadline:
+            line = response.readline(1 << 20)
+            if not line:
+                reason = "eof"
+                break
+            total_bytes += len(line)
+            if total_bytes > (1 << 20):
+                reason = "size_limit"
+                break
+            line = line.decode("utf-8", "replace").rstrip("\r\n")
+            if not line:
+                if data:
+                    fields["data"] = _decode("\n".join(data).encode("utf-8"))
+                    events.append(fields)
+                fields, data = {}, []
+                continue
+            key, _, value = line.partition(":")
+            if value.startswith(" "):
+                value = value[1:]
+            if key == "data":
+                data.append(value)
+            elif key in ("id", "event"):
+                fields[key] = value
+    except TimeoutError:
+        pass
+    if len(events) == limit:
+        reason = "limit"
+    return {"events": events, "stopped": reason}
 
 
 def emit(obj, as_json=False):
@@ -211,28 +285,142 @@ def read_text_arg(spec):
     return spec
 
 
-def download(path, query, out_path):
-    token = load_config()["token"]
-    base = load_config()["base_url"]
+def _filename_from_content_disposition(cdisp):
+    """Recover the server's filename per RFC 6266 / RFC 5987.
+
+    The ext-value form (`filename*=UTF-8''%E4%B8%AD.pdb`) wins because it is
+    the only one that survives non-ASCII names; the quoted and bare forms are
+    fallbacks. OBS replies carry both, and grabbing the tail of the header is
+    what used to leak `"; filename*=UTF-8''` into the local file name.
+    """
+    if not cdisp:
+        return None
+    m = re.search(r"filename\*\s*=\s*([^']*)''([^;]+)", cdisp, re.I)
+    if m:
+        charset = (m.group(1) or "utf-8").strip().lower()
+        raw = m.group(2).strip().strip('"')
+        try:
+            return urllib.parse.unquote(raw, encoding=charset or "utf-8")
+        except LookupError:
+            return urllib.parse.unquote(raw)
+    m = re.search(r'filename\s*=\s*"((?:[^"\\]|\\.)*)"', cdisp, re.I)
+    if m:
+        return m.group(1).replace('\\"', '"')
+    m = re.search(r"filename\s*=\s*([^;]+)", cdisp, re.I)
+    if m:
+        return m.group(1).strip().strip('"') or None
+    return None
+
+
+def download(path, query, out_path, *, token=None, base=None, timeout=TIMEOUT, max_bytes=None):
+    token, base = _request_config(token, base)
     url = _url(base, path, query)
     req = urllib.request.Request(url, headers={"Asterfire-Token": token,
                                                "User-Agent": "afg-py/1.0 (dsh)"})
-    with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+    try:
+        resp = urllib.request.urlopen(req, timeout=timeout)
+    except urllib.error.HTTPError as e:
+        raw = e.read()
+        payload = _decode(raw) if raw else None
+        msg = None
+        if isinstance(payload, dict):
+            err = payload.get("error")
+            if isinstance(err, dict):
+                msg = err.get("message") or err.get("code")
+            elif isinstance(err, str):
+                msg = err
+        hint = {401: "令牌无效或已过期", 403: "无权访问该文件",
+                404: "文件不存在或不属于当前账号"}.get(e.code)
+        raise AfgError("下载失败：%s" % (msg or hint or ("服务端返回 HTTP %s" % e.code)),
+                       status=e.code, payload=payload) from None
+    except urllib.error.URLError as e:
+        raise AfgError("下载失败：网络错误（%s）" % (e.reason,)) from None
+
+    with resp:
+        length = resp.headers.get("Content-Length", "")
+        if max_bytes is not None and length.isdigit() and int(length) > max_bytes:
+            raise AfgError("产物超过本次下载大小限制。")
         ctype = resp.headers.get("Content-Type", "")
-        cdisp = resp.headers.get("Content-Disposition", "")
-        name = None
-        if "filename=" in cdisp:
-            name = cdisp.split("filename=")[-1].strip().strip('";')
+        name = _filename_from_content_disposition(
+            resp.headers.get("Content-Disposition", ""))
         target = Path(out_path) if out_path else Path(name or "download.bin")
         n = 0
-        with open(target, "wb") as f:
-            while True:
-                chunk = resp.read(1 << 20)
-                if not chunk:
-                    break
-                f.write(chunk)
-                n += len(chunk)
+        try:
+            with open(target, "wb") as f:
+                while True:
+                    size = 1 << 20 if max_bytes is None else min(1 << 20, max_bytes - n + 1)
+                    chunk = resp.read(size)
+                    if not chunk:
+                        break
+                    n += len(chunk)
+                    if max_bytes is not None and n > max_bytes:
+                        raise AfgError("产物超过本次下载大小限制。")
+                    f.write(chunk)
+        except OSError as e:
+            raise AfgError("无法写入 %s：%s（请确认目录存在且可写）"
+                           % (target, e.strerror or e.__class__.__name__)) from None
     return {"saved_to": str(target.resolve()), "bytes": n, "content_type": ctype}
+
+
+# Set by commands whose body carries the verdict while the process status must
+# still be non-zero (today: `wf validate` with blocking issues).
+EXIT_OVERRIDE = {"code": 0}
+
+
+def _blocking_issues(result):
+    issues = result.get("issues") if isinstance(result, dict) else None
+    return [i for i in (issues or [])
+            if i.get("blocks_execute") or i.get("severity") == "error"]
+
+
+def _mark_validation(result):
+    """Make the verdict usable without reading prose.
+
+    The platform answers 200 even when validation carries `blocks_execute:
+    true`, so a caller that trusts the HTTP status or the process exit code
+    walks straight into a workflow that cannot run. `blocks_execute` is the
+    authoritative signal; surface it in the body and in the exit code.
+    """
+    if not isinstance(result, dict):
+        return result
+    blocking = _blocking_issues(result)
+    result["valid"] = not blocking
+    result["blocking_count"] = len(blocking)
+    if blocking:
+        EXIT_OVERRIDE["code"] = 1
+    return result
+
+
+def _wf_status_fallback(a, reason):
+    """Recover progress when the status endpoints answer 5xx.
+
+    `/workflows/{id}/status` and `/workflows/{id}/executions/{exec}/status`
+    fail on any plan that owns a real execution, while the execution detail
+    endpoint stays healthy and carries per-node state. Degrading to it beats
+    reporting nothing.
+    """
+    plan_id = a.plan_id
+    execution_id = getattr(a, "execution_id", None)
+    if not execution_id:
+        listing = unwrap(request("GET", "/workflows/%s/executions" % plan_id,
+                                 token=a.token, base=a.base_url))
+        execs = (listing or {}).get("executions") or []
+        if not execs:
+            raise AfgError("状态接口暂不可用（%s），且该流程没有执行记录" % reason,
+                           status=500)
+        execution_id = execs[0].get("id")
+    detail = unwrap(request("GET", "/workflows/%s/executions/%s"
+                            % (plan_id, execution_id),
+                            token=a.token, base=a.base_url))
+    nodes = detail.get("nodes") if isinstance(detail, dict) else None
+    return {
+        "degraded": True,
+        "reason": "status 接口返回 5xx，已降级读取执行明细（%s）" % reason,
+        "plan_status": detail.get("status") if isinstance(detail, dict) else None,
+        "execution_id": execution_id,
+        "nodes": [{"id": n.get("logical_id") or n.get("id"),
+                   "status": n.get("status")} for n in (nodes or [])],
+    }
 
 
 # --------------------------------------------------------------------------
@@ -246,7 +434,8 @@ def cmd_models(a):
     return unwrap(request("GET", "/models", token=a.token, base=a.base_url))
 
 
-BRIEF_KEYS = ("name", "display_name", "description", "tags", "type", "author")
+BRIEF_KEYS = ("name", "display_name", "description", "tags", "type", "author",
+              "version", "version_source", "versions")
 
 
 def _brief(items, full):
@@ -267,56 +456,316 @@ def _brief(items, full):
     return out
 
 
-def cmd_agents(a):
-    data = unwrap(request("GET", "/toolboxes", query={"type": "agent"},
-                          token=a.token, base=a.base_url))
+# ---------------------------------------------------------------------------
+# toolbox helpers: version, schema lookup, submit-time validation
+# ---------------------------------------------------------------------------
+
+def _asset_version(url, name):
+    if not isinstance(url, str) or not url.startswith(("http://", "https://")):
+        return None
+    try:
+        path = urllib.parse.urlsplit(url).path
+    except ValueError:
+        return None
+    parts = [urllib.parse.unquote(part) for part in path.split("/")]
+    if not any(part in ("toolbox-icons", "toolbox-icon", "toolbox-demos",
+                        "toolboxes", "toolbox", "kits", "kit") for part in parts):
+        return None
+    for tool, version in zip(parts, parts[1:]):
+        if tool == name and re.fullmatch(r"v?\d+(?:\.\d+){1,3}(?:[-+][\w.-]+)?", version):
+            return version
+    return None
+
+
+def _toolbox_entry(item):
+    entry = dict(item)
+    for field in ("version", "current_version", "toolbox_version"):
+        if isinstance(item.get(field), str) and item[field].strip():
+            entry.update(version=item[field].strip(), version_source=field)
+            return entry
+    version = _asset_version(item.get("icon"), item.get("name"))
+    if version:
+        entry.update(version=version, version_source="icon")
+        return entry
+    demos = set()
+    for demo in item.get("demos") or []:
+        if not isinstance(demo, dict):
+            continue
+        value = demo.get("value")
+        files = demo.get("files")
+        urls = list(value.values()) if isinstance(value, dict) else []
+        if isinstance(files, list):
+            urls.extend(files)
+        demos.update(v for v in (_asset_version(u, item.get("name")) for u in urls) if v)
+    if len(demos) == 1:
+        entry.update(version=next(iter(demos)), version_source="demo")
+    return entry
+
+
+def _toolboxes(kind, token, base):
+    data = unwrap(request("GET", "/toolboxes", query={"type": kind},
+                          token=token, base=base))
     items = data.get("toolboxes", data) if isinstance(data, dict) else data
-    if a.query:
-        q = a.query.lower()
-        items = [t for t in items
-                 if q in (t.get("name", "") + " " + (t.get("description") or "") + " "
-                          + " ".join(t.get("tags") or [])).lower()]
-    if getattr(a, "limit", None):
-        items = items[:a.limit]
-    return {"count": len(items), "agents": _brief(items, getattr(a, "full", False))}
+    return [_toolbox_entry(t) for t in items or []]
+
+
+def _version_key(version):
+    match = re.fullmatch(r"v?(\d+(?:\.\d+)*)(?:-([^+]+))?(?:\+.*)?", version)
+    if not match:
+        return (), False, (), version
+    release, prerelease = match.groups()
+    suffix = tuple((0, int(p)) if p.isdigit() else (1, p) for p in (prerelease or "").split("."))
+    return tuple(map(int, release.split("."))), prerelease is None, suffix, version
+
+
+def _versions(items):
+    versions = {t["version"] for t in items if isinstance(t.get("version"), str) and t["version"]}
+    for t in items:
+        reported = t.get("versions")
+        if isinstance(reported, list):
+            versions.update(v for v in reported if isinstance(v, str) and v)
+    return sorted(versions, key=_version_key)
+
+
+def _select_kit(items, name, version=None):
+    matches = [t for t in items if t.get("name") == name]
+    if not matches:
+        raise AfgError("找不到 kit: %s（先跑 `afg kits list --query %s`）" % (name, name))
+    versions = _versions(matches)
+    candidates = [t for t in matches if t.get("version") == version] if version else matches
+    if not candidates:
+        raise AfgError("Kit %s 没有可识别的版本 %s。目录版本：%s"
+                       % (name, version, "、".join(versions) or "未知"))
+    first = candidates[0]
+    if any(t.get("input_schema") != first.get("input_schema") for t in candidates[1:]):
+        raise AfgError("Kit %s 有多份不同的输入 schema，无法确定提交使用的版本。"
+                       "请用 kits schema --version 查看目录版本：%s。"
+                       % (name, "、".join(versions) or "未知"))
+    return dict(first, versions=versions)
+
+
+def _validate_kit_input(toolbox, value):
+    """Check a submit payload against the kit's own input_schema.
+
+    The platform accepts anything (missing required fields, wrong enum values)
+    and only fails later, after the task was queued. Catching it here costs one
+    catalog read and keeps the error attached to the argument that caused it.
+    """
+    schema = (toolbox or {}).get("input_schema") or {}
+    fields = [f for f in (schema.get("fields") or []) if isinstance(f, dict)]
+    by_name = {f.get("name"): f for f in fields}
+    hard, soft = [], []
+
+    for f in fields:
+        name = f.get("name")
+        required = (f.get("validation") or {}).get("required")
+        if required and value.get(name) in (None, "", []):
+            hard.append("缺少必填字段 %s（%s）" % (name, f.get("label") or f.get("type")))
+
+    for name, val in value.items():
+        f = by_name.get(name)
+        if f is None:
+            soft.append("未知字段 %s：该 Kit 的 schema 没有这个字段，服务端可能忽略" % name)
+            continue
+        if f.get("type") == "select":
+            allowed = [o["value"] for o in (f.get("options") or [])
+                       if isinstance(o, dict) and "value" in o]
+            if allowed and val not in allowed:
+                hard.append("字段 %s 的取值 %r 不在允许列表 %s 中"
+                            % (name, val, allowed[:8]))
+        if f.get("type") == "number" and isinstance(val, (int, float)):
+            v = f.get("validation") or {}
+            if "min" in v and val < v["min"]:
+                hard.append("字段 %s=%s 小于最小值 %s" % (name, val, v["min"]))
+            if "max" in v and val > v["max"]:
+                hard.append("字段 %s=%s 大于最大值 %s" % (name, val, v["max"]))
+    return hard, soft
+
+
+
+def _suggest_kit_names(name, token, base, limit=3):
+    """Suggest catalog entries close to a name that 404'd.
+
+    Name drift is real: `RosettaInterfaceAnalyzer` is listed but only
+    `RosettaInterfaceAnalyzer-kit` is registered and callable.
+    """
+    try:
+        data = unwrap(request("GET", "/toolboxes", query={"type": "kit"},
+                              token=token, base=base))
+    except Exception:
+        return []
+    items = data.get("toolboxes", data) if isinstance(data, dict) else data
+    names = [t.get("name") for t in (items or []) if t.get("name") and t.get("name") != name]
+    return difflib.get_close_matches(name, names, n=limit, cutoff=0.75)
+
+def _explain_business_error(message):
+    """Attach an actionable hint to the platform's two opaque business errors.
+
+    Neither string names the cause: one means the account lacks the grant, the
+    other means the catalog lists a toolbox the server never registered. Users
+    otherwise read both as "the plugin is broken".
+    """
+    if not message:
+        return message
+    if "not authorized to use this application" in message and "403：" not in message:
+        return message + "（403：该工具在当前账号或环境未开放，可在目录里确认它确实存在）"
+    if "Application not found" in message and "404：" not in message:
+        return message + "（404：服务端没有注册该应用；可能是目录残留、名称不一致，或该条目只在另一环境注册）"
+    return message
+
+
+def _task_outcome(detail):
+    """Keep each step's verdict so later output cannot overwrite a failure."""
+    evidence = []
+    success_reason = None
+
+    for st in detail.get("steps") or []:
+        failures = []
+        slurm = (st.get("slurm_job_status") or "").upper()
+        if slurm in ("FAILED", "CANCELLED", "TIMEOUT", "NODE_FAIL"):
+            failures.append("slurm=%s" % slurm)
+        if isinstance(st.get("status"), int) and st["status"] < 0:
+            failures.append("step_status=%s" % st["status"])
+
+        output = (st.get("tool_data") or {}).get("structured_output")
+        if not isinstance(output, dict):
+            output = {}
+        flag = output.get("success")
+        if isinstance(flag, dict):
+            flag = flag.get("value")
+        if flag is False:
+            failures.append("structured_output.success=false")
+        status = output.get("status")
+        if isinstance(status, dict):
+            status = status.get("value")
+        if isinstance(status, str) and status.lower() in ("error", "failed", "failure"):
+            failures.append("structured_output.status=%s" % status)
+
+        if failures:
+            evidence.extend(failures)
+        elif flag is True:
+            success_reason = "structured_output.success=true"
+        elif not success_reason:
+            data_keys = output.keys() - {"success", "status", "message"}
+            if data_keys:
+                success_reason = "structured_output 含 %d 个数据字段" % len(data_keys)
+
+    for m in detail.get("messages") or []:
+        if "__STEP_FAILED__" in str(m.get("content") or "")[:120]:
+            evidence.append("step_failed_marker")
+            break
+
+    if detail.get("is_thinking") is True:
+        return {"state": "unknown", "reason": "任务仍在运行", "evidence": evidence}
+    if evidence:
+        state = "partial" if success_reason else "failed"
+        reason = "、".join(evidence)
+        if success_reason:
+            reason = "部分步骤有成功证据，但存在失败步骤：" + reason
+        return {"state": state, "reason": reason, "evidence": evidence}
+    if success_reason:
+        return {"state": "success", "reason": success_reason, "evidence": evidence}
+    return {"state": "unknown", "reason": "缺少判定依据", "evidence": evidence}
+
+
+def _search_text(text):
+    return unicodedata.normalize("NFKC", str(text or "")).casefold().strip()
+
+
+def _search_rank(item, query):
+    name = _search_text(item.get("name"))
+    display = _search_text(item.get("display_name"))
+    if query == name:
+        return 0
+    if query == display:
+        return 1
+    if name.startswith(query) or display.startswith(query):
+        return 2
+    if query in name or query in display:
+        return 3
+    if any(query in _search_text(item.get(key)) for key in ("description", "tags")):
+        return 4
+    return None
+
+
+def _catalog(a, kind):
+    items = _toolboxes(kind, a.token, a.base_url)
+    groups = {}
+    for t in items:
+        groups.setdefault(t.get("name"), []).append(t)
+    query = _search_text(a.query)
+    ranked = [(0 if not query else _search_rank(t, query), t) for t in items]
+    matched = [t for rank, t in sorted(((r, t) for r, t in ranked if r is not None),
+                                      key=lambda pair: pair[0])]
+    selected = {}
+    shown = []
+    for t in matched:
+        name = t.get("name")
+        if not a.all_versions and name in selected:
+            continue
+        if name not in selected:
+            selected[name] = _versions(groups[name])
+        shown.append(dict(t, versions=selected[name]))
+    if a.limit:
+        shown = shown[:a.limit]
+    return {"count": len(shown), "entries": len(matched),
+            kind + "s": _brief(shown, a.full)}
+
+
+def cmd_agents(a):
+    return _catalog(a, "agent")
 
 
 def cmd_kits(a):
-    data = unwrap(request("GET", "/toolboxes", query={"type": "kit"},
-                          token=a.token, base=a.base_url))
-    items = data.get("toolboxes", data) if isinstance(data, dict) else data
-    if getattr(a, "query", None):
-        q = a.query.lower()
-        items = [t for t in items
-                 if q in (t.get("name", "") + " " + (t.get("description") or "") + " "
-                          + " ".join(t.get("tags") or [])).lower()]
-    if getattr(a, "limit", None):
-        items = items[:a.limit]
-    return {"count": len(items), "kits": _brief(items, getattr(a, "full", False))}
+    return _catalog(a, "kit")
 
 
 def cmd_kit_schema(a):
-    data = unwrap(request("GET", "/toolboxes", query={"type": "kit"},
-                          token=a.token, base=a.base_url))
-    items = data.get("toolboxes", data) if isinstance(data, dict) else data
-    for t in items:
-        if t.get("name") == a.name:
-            return t
-    raise AfgError("找不到 kit: %s（先跑 `afg kits list --query %s`）" % (a.name, a.name))
+    return _select_kit(_toolboxes("kit", a.token, a.base_url), a.name, a.version)
+
+
+def _prepare_kit_input(a):
+    value = parse_input(a.input)
+    if not isinstance(value, dict):
+        raise AfgError("Kit 输入必须是 JSON 对象。")
+    if a.force:
+        return value, []
+    toolbox = _select_kit(_toolboxes("kit", a.token, a.base_url), a.kit)
+    hard, warnings = _validate_kit_input(toolbox, value)
+    if hard:
+        raise AfgError("Kit 输入校验未通过：\n  - " + "\n  - ".join(hard)
+                       + "\n（--force 可跳过 schema 校验）")
+    return value, warnings
 
 
 def cmd_kit_submit(a):
-    payload = {"toolbox": a.kit, "input": parse_input(a.input)}
+    value, warnings = _prepare_kit_input(a)
+    payload = {"toolbox": a.kit, "input": value}
     if a.workspace_id:
         payload["workspace_id"] = a.workspace_id
-    return unwrap(request("POST", "/kits/submit", body=payload,
-                          token=a.token, base=a.base_url))
+    try:
+        result = unwrap(request("POST", "/kits/submit", body=payload,
+                                token=a.token, base=a.base_url))
+    except AfgError as e:
+        message = _explain_business_error(str(e))
+        if e.status == 404:
+            hints = _suggest_kit_names(a.kit, a.token, a.base_url)
+            if hints:
+                message += "；目录里有相近条目：%s" % "、".join(hints)
+        raise AfgError(message, status=e.status, payload=e.payload) from None
+    if warnings and isinstance(result, dict):
+        result["warnings"] = warnings
+    return result
 
 
 def cmd_kit_run(a):
-    payload = {"kit_name": a.kit, "input": parse_input(a.input)}
-    return unwrap(request("POST", "/tasks/%s/kit-run" % a.task_id, body=payload,
-                          token=a.token, base=a.base_url))
+    value, warnings = _prepare_kit_input(a)
+    payload = {"kit_name": a.kit, "input": value}
+    result = unwrap(request("POST", "/tasks/%s/kit-run" % a.task_id, body=payload,
+                            token=a.token, base=a.base_url))
+    if warnings and isinstance(result, dict):
+        result["warnings"] = warnings
+    return result
 
 
 def cmd_cloud_list(a):
@@ -332,13 +781,23 @@ def cmd_cloud_upload(a):
                           files={"file": a.path},
                           token=a.token, base=a.base_url, timeout=max(TIMEOUT, a.timeout)))
     # 服务端返回 {"file": {...}}，文档里的 .id 在 data.file.id 下面
-    if isinstance(data, dict) and isinstance(data.get("file"), dict):
-        return data["file"]
-    return data
+    result = data["file"] if isinstance(data, dict) and isinstance(data.get("file"), dict) else data
+    # 平台的 multipart 解析会丢掉文件名里的非 ASCII 字节（也会吞掉 %），
+    # 中文名会被静默改写成残缺的英文名——先把这件事说出来，别让用户以为传对了。
+    local = Path(a.path).name
+    stored = result.get("name") if isinstance(result, dict) else None
+    if stored and local != stored:
+        result["warnings"] = [
+            "平台丢弃了文件名中的非 ASCII 字符：%r -> %r。建议改用英文文件名后重新上传。"
+            % (local, stored)]
+    return result
 
 
 def cmd_cloud_download(a):
-    return download("/files/%s/download" % a.file_id, {"workspace_id": a.workspace_id}, a.out)
+    if a.max_bytes is not None and a.max_bytes < 1:
+        raise AfgError("--max-bytes 必须为正整数。")
+    return download("/files/%s/download" % a.file_id, {"workspace_id": a.workspace_id},
+                    a.out, token=a.token, base=a.base_url, timeout=a.timeout, max_bytes=a.max_bytes)
 
 
 def cmd_tasks_list(a):
@@ -350,8 +809,11 @@ def cmd_tasks_list(a):
 
 
 def cmd_tasks_get(a):
-    return unwrap(request("GET", "/tasks/%s" % a.task_id, query={"limit": a.limit},
-                          token=a.token, base=a.base_url))
+    detail = unwrap(request("GET", "/tasks/%s" % a.task_id, query={"limit": a.limit},
+                           token=a.token, base=a.base_url))
+    if isinstance(detail, dict):
+        detail["outcome"] = _task_outcome(detail)
+    return detail
 
 
 def cmd_tasks_status(a):
@@ -443,6 +905,8 @@ def cmd_wf(a):
             payload["workspace_id"] = a.workspace_id
         return unwrap(request("POST", "/workflows", body=payload,
                               token=a.token, base=a.base_url))
+    if a.sub == "delete" and not a.yes:
+        raise AfgError("确认删除工作流请加 --yes（plan_id=%s）" % a.plan_id)
     if a.sub == "execute":
         payload = {}
         if a.inherit_inputs_from:
@@ -453,12 +917,23 @@ def cmd_wf(a):
                               query={"no_cache": "true" if a.no_cache else None},
                               body=payload, token=a.token, base=a.base_url))
     if a.sub == "status":
-        return unwrap(request("GET", "/workflows/%s/status" % a.plan_id,
-                              query={"execution_id": a.execution_id},
-                              token=a.token, base=a.base_url))
+        try:
+            return unwrap(request("GET", "/workflows/%s/status" % a.plan_id,
+                                  query={"execution_id": a.execution_id},
+                                  token=a.token, base=a.base_url))
+        except AfgError as e:
+            if e.status is None or e.status < 500:
+                raise
+            return _wf_status_fallback(a, str(e))
     if a.sub == "exec-status":
-        return unwrap(request("GET", "/workflows/%s/executions/%s/status"
-                              % (a.plan_id, a.execution_id), token=a.token, base=a.base_url))
+        try:
+            return unwrap(request("GET", "/workflows/%s/executions/%s/status"
+                                  % (a.plan_id, a.execution_id),
+                                  token=a.token, base=a.base_url))
+        except AfgError as e:
+            if e.status is None or e.status < 500:
+                raise
+            return _wf_status_fallback(a, str(e))
     if a.sub == "node-outputs":
         return unwrap(request("GET", "/workflows/%s/nodes/%s/outputs" % (a.plan_id, a.node_id),
                               query={"execution_id": a.execution_id},
@@ -519,10 +994,16 @@ def cmd_wf(a):
         text = read_text_arg(a.yaml)
         return unwrap(request("PUT", "/workflows/%s/yaml" % a.plan_id, body={"yaml": text},
                               token=a.token, base=a.base_url))
+    if a.sub == "validate":
+        return _mark_validation(unwrap(request("POST", "/workflows/%s/validate"
+                                               % a.plan_id,
+                                               token=a.token, base=a.base_url)))
     if a.sub == "validate-yaml":
         text = read_text_arg(a.yaml)
-        return unwrap(request("POST", "/workflows/%s/yaml/validate" % a.plan_id,
-                              body={"yaml": text}, token=a.token, base=a.base_url))
+        return _mark_validation(unwrap(request("POST", "/workflows/%s/yaml/validate"
+                                               % a.plan_id,
+                                               body={"yaml": text},
+                                               token=a.token, base=a.base_url)))
     if a.sub == "tools":
         return unwrap(request("GET", "/workflow-tools",
                               query={"query": a.query,
@@ -614,6 +1095,69 @@ def cmd_raw(a):
                           token=a.token, base=a.base_url))
 
 
+def cmd_wf_session(a):
+    action = a.session_action
+    token = os.environ.get("AFG_SESSION_TOKEN") or a.token
+    path = "/openagent/sessions"
+    method = "GET"
+    body = None
+    query = None
+    if action == "plan-create":
+        method, path = "POST", "/workflow"
+        body = {key: getattr(a, key) for key in ("title", "prompt", "file_ids", "auto_mode")
+                if getattr(a, key) is not None}
+        query = {"workspace_id": a.workspace_id}
+    elif action in ("create", "list"):
+        if a.plan_id < 1:
+            raise AfgError("plan_id 必须是正整数。")
+        if action == "create":
+            method, body = "POST", {"plan_id": a.plan_id}
+        else:
+            query = {"plan_id": a.plan_id}
+    else:
+        if not a.session_id.strip() or a.session_id in (".", ".."):
+            raise AfgError("请提供有效的 session_id。")
+        path += "/" + urllib.parse.quote(a.session_id, safe="")
+        if action == "events":
+            if not 1 <= a.limit <= 100 or not 1 <= a.seconds <= 60:
+                raise AfgError("事件读取 limit 必须在 1–100，seconds 必须在 1–60。")
+            return request("GET", "/openagent/event", query={"session_id": a.session_id},
+                           token=token, base=a.base_url, prefix="", bearer=True, timeout=a.seconds,
+                           retries=0, event_limit=a.limit)
+        if action == "send":
+            parts = (parse_input(a.parts) if a.parts is not None else
+                     [{"type": "text", "text": a.message}])
+            if (not isinstance(parts, list) or not parts
+                    or not all(isinstance(p, dict) and p.get("type") for p in parts)):
+                raise AfgError("parts 必须是非空 JSON 对象数组，每项都需要 type。")
+            if any(p["type"] == "text" and
+                   (not isinstance(p.get("text"), str) or not p["text"].strip()) for p in parts):
+                raise AfgError("文本消息不能为空。")
+            method, path, body = "POST", path + "/prompt_async", {"parts": parts}
+            if a.llm_model:
+                body["llm_model"] = a.llm_model
+        elif action == "messages":
+            if a.limit is not None and a.limit < 1:
+                raise AfgError("limit 必须是正整数。")
+            path += "/messages"
+            query = {"limit": a.limit, "before": a.before}
+        else:
+            method, path = "POST", path + "/abort"
+    response = request(method, path, body=body, query=query, token=token, base=a.base_url,
+                       timeout=a.timeout, prefix="", bearer=True)
+    data = response.get("data", response) if isinstance(response, dict) else response
+    if action == "plan-create":
+        return response
+    if action in ("send", "abort") and response in (b"", "", None):
+        return {"accepted": True}
+    if action == "messages":
+        cursor = next((v for k, v in LAST_HEADERS.items() if k.lower() == "x-next-cursor"), None)
+        if isinstance(data, dict) and isinstance(data.get("messages"), list):
+            return dict(data, next_cursor=cursor or data.get("next_cursor"))
+        return {"messages": data, "next_cursor": cursor}
+    return data
+
+
 # --------------------------------------------------------------------------
 # cli
 # --------------------------------------------------------------------------
@@ -658,9 +1202,10 @@ def build_parser():
     pm.set_defaults(func=cmd_models)
 
     pa = mkadd(sub, "agents", help="列出 Agent 工具箱")
-    pa.add_argument("--query", help="按名称/描述/标签过滤")
+    pa.add_argument("--query", help="按注册名、展示名、描述或标签搜索")
     pa.add_argument("--limit", type=int, help="最多返回几条")
     pa.add_argument("--full", action="store_true", help="返回完整字段（含长文档）")
+    pa.add_argument("--all-versions", action="store_true", help="保留同注册名的不同目录条目")
     pa.set_defaults(func=cmd_agents)
 
     k = mkadd(sub, "kits", help="Kit 工具")
@@ -669,19 +1214,24 @@ def build_parser():
     kq.add_argument("--query")
     kq.add_argument("--limit", type=int, help="最多返回几条")
     kq.add_argument("--full", action="store_true", help="返回完整字段（含长文档）")
+    kq.add_argument("--all-versions", action="store_true",
+                    help="保留同名 Kit 的每个历史版本（默认按名字折叠）")
     kq.set_defaults(func=cmd_kits)
     ksch = mkadd(ks, "schema")
     ksch.add_argument("name")
+    ksch.add_argument("--version", help="查看指定目录版本的 schema")
     ksch.set_defaults(func=cmd_kit_schema)
     ksub = mkadd(ks, "submit")
     ksub.add_argument("--kit", required=True)
     ksub.add_argument("--input", required=True, help="JSON 或 @params.json")
     ksub.add_argument("--workspace-id", type=int)
+    ksub.add_argument("--force", action="store_true", help="跳过提交前的 schema 校验")
     ksub.set_defaults(func=cmd_kit_submit)
     krun = mkadd(ks, "run")
     krun.add_argument("task_id")
     krun.add_argument("--kit", required=True)
     krun.add_argument("--input", required=True)
+    krun.add_argument("--force", action="store_true", help="跳过提交前的 schema 校验")
     krun.set_defaults(func=cmd_kit_run)
 
     c = mkadd(sub, "cloud", help="云盘文件")
@@ -702,6 +1252,7 @@ def build_parser():
     cd.add_argument("file_id")
     cd.add_argument("-o", "--out")
     cd.add_argument("--workspace-id", type=int)
+    cd.add_argument("--max-bytes", type=int, help=argparse.SUPPRESS)
     cd.set_defaults(func=cmd_cloud_download)
 
     t = mkadd(sub, "tasks", help="Agent 任务")
@@ -767,9 +1318,38 @@ def build_parser():
     wc.add_argument("--file", action="append")
     wc.add_argument("--workspace-id", type=int)
     wc.set_defaults(func=cmd_wf)
+    wd = mkadd(ws, "delete")
+    wd.add_argument("plan_id")
+    wd.add_argument("--yes", action="store_true", help="确认删除工作流")
+    wd.set_defaults(func=cmd_wf)
+    session = mkadd(ws, "session", help="Workflow 智算会话")
+    actions = session.add_subparsers(dest="session_action", required=True)
+    plan = mkadd(actions, "plan-create")
+    plan.add_argument("--title")
+    plan.add_argument("--prompt")
+    plan.add_argument("--file", dest="file_ids", action="append")
+    plan.add_argument("--auto-mode", action="store_true", default=None)
+    plan.add_argument("--workspace-id", type=int)
+    for action in ("create", "list"):
+        mkadd(actions, action).add_argument("plan_id", type=int)
+    send = mkadd(actions, "send")
+    send.add_argument("session_id")
+    content = send.add_mutually_exclusive_group(required=True)
+    content.add_argument("--message")
+    content.add_argument("--parts", help="JSON 数组或 @parts.json")
+    send.add_argument("--llm-model")
+    messages = mkadd(actions, "messages")
+    messages.add_argument("session_id")
+    messages.add_argument("--limit", type=int)
+    messages.add_argument("--before")
+    events = mkadd(actions, "events")
+    events.add_argument("session_id")
+    events.add_argument("--limit", type=int, default=20)
+    events.add_argument("--seconds", type=int, default=10)
+    mkadd(actions, "abort").add_argument("session_id")
+    session.set_defaults(func=cmd_wf_session)
     for name, extra, attrs in [
         ("get", ["plan_id"], []),
-        ("delete", ["plan_id"], []),
         ("validate", ["plan_id"], []),
         ("cancel", ["plan_id"], []),
         ("executions", ["plan_id"], []),
@@ -906,11 +1486,17 @@ def main(argv=None):
     try:
         result = args.func(args)
         emit(result, as_json=args.json)
-        return 0
+        return EXIT_OVERRIDE["code"] or 0
     except AfgError as e:
-        err = {"success": False, "error": str(e)}
+        err = {"success": False, "error": _explain_business_error(str(e))}
         if e.status is not None:
             err["status_code"] = e.status
+        detail = e.payload.get("error") if isinstance(e.payload, dict) else None
+        if isinstance(detail, dict):
+            if detail.get("code"):
+                err["error_code"] = detail.get("code")
+            if detail.get("request_id"):
+                err["request_id"] = detail.get("request_id")
         if e.payload is not None:
             err["details"] = e.payload
         print(json.dumps(err, ensure_ascii=False, indent=2), file=sys.stderr)
