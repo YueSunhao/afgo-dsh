@@ -1,6 +1,6 @@
 {
   "name": "afgo-dsh",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "AsterFire Go（星使智算）科学计算平台插件：一句话调用云端科学计算 —— 蛋白质结构预测与设计、分子动力学模拟、分子对接、自由能计算、生物信息学分析、DFT 密度泛函与量子化学计算。同时是一份可移植的 Agent 技能（DSH / WorkBuddy / Claude Code 通用），零第三方 Python 依赖。",
   "keywords": [
     "dsh",

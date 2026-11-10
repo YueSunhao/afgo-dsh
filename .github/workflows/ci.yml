@@ -36,6 +36,9 @@ jobs:
       - name: Catalog and Workflow Session tests
         run: python -m unittest discover -s tests
 
+      - name: Workbench client tests
+        run: node --test tests/workbench_client.test.mjs
+
       - name: Bundle manifest
         run: |
           node --check lib/index.js
