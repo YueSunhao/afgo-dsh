@@ -111,9 +111,9 @@ afg wf node-outputs <plan_id> <node_id> --execution-id <execution_id> --json
 
 ### 结果可视化与用户报告
 
-DSH 原生工具 `afg_tasks` 支持只读 `action=visualizations, task_id=<任务编号>`，返回结构、图片和 CSV/TSV 候选及工作台入口。`get` 与 `files` 的返回也包含 `visualizations`。这是 DSH 工具能力；独立 Python CLI 继续通过 `tasks files` 获取文件清单。
+DSH 原生工具 `afg_results` 接收 `task_id`，自动下载该任务中的代表性结构和结果图，用本地 Mol* 生成结构 PNG，并保存为 DSH 持久图片附件。`afg_tasks get` 读取已经停止的任务时也自动附带 `report`。`visualizations` 继续提供候选清单。独立 Python CLI 通过 `tasks files` 获取原文件。
 
-每次汇报计算结果时，核对该任务的产物，附上可用的结构预览入口或已下载的结果图片，并说明任务编号、实际文件名与文件角色。工作台路径为「插件 → afgo-dsh → 我的任务 → 打开编号 → 结果可视化」。若已实际导出或下载图片，可使用本地文件链接或 Markdown 图片展示；没有生成图片时给出可操作的查看入口。
+每次最终汇报计算结果时，先核对任务状态，再使用 `report.markdown` 将结构图和结果图直接嵌入最终回复，并附任务编号、实际文件名、文件角色与来源记录。尚无 `report` 或要重新生成时调用 `afg_results`。工具结果卡片会直接显示已保存的图片，最终回复也应使用图片语法，用户可以在同一对话中查看。缺少某类文件或渲染失败时明确说明 `report.warnings`，并附工作台入口。工作台路径为「插件 → afgo-dsh → 我的任务 → 打开编号 → 结果可视化」。
 
 结构预览使用本地 Mol*，可导出 PNG 与带任务 ID、文件 ID、SHA-256、相机和表示方式的 scene.json。渲染基于任务文件的真实坐标，文件清单可能同时含输入、中间文件与输出。晶胞及占据率以来源文件为准，自动推断的键线用于显示。EXTXYZ 当前只展示坐标帧；ASE `.traj`、XTC 和压缩结构文件需要下载后在合适工具中查看。缺少可视化文件时，在报告中注明并附现有报告/数据文件。
 

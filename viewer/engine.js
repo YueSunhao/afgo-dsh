@@ -111,6 +111,10 @@ async function load(message) {
   frame.value = 1;
   document.getElementById('frames').hidden = trajectory.data.frameCount < 2;
   await showFrame(0);
+  if (message.autoExport === true) {
+    const dataUri = await plugin.helpers.viewportScreenshot.getImageDataUri();
+    report('png', { content: dataUri.split(',')[1], manifest: sceneManifest() });
+  }
 }
 
 style.addEventListener('change', () => operation(async () => {
@@ -129,15 +133,16 @@ document.getElementById('png').addEventListener('click', () => operation(async (
   const dataUri = await plugin.helpers.viewportScreenshot.getImageDataUri();
   report('png', { content: dataUri.split(',')[1], name: `task-${payload.taskId}-${payload.name}-frame-${frame.value}.png` });
 }));
-document.getElementById('manifest').addEventListener('click', () => {
-  report('manifest', { manifest: {
+function sceneManifest() {
+  return {
     schema: 'afgo.visualization/1', taskId: payload.taskId, fileId: payload.fileId,
     name: payload.name, sha256: payload.sha256, fetchedAt: payload.fetchedAt,
     renderer: { name: 'Mol*', version: VERSION }, frame: Number(frame.value),
     representation: representationName, framing, camera: plugin?.canvas3d?.camera.getSnapshot(),
     notes: document.getElementById('notes').textContent
-  } });
-});
+  };
+}
+document.getElementById('manifest').addEventListener('click', () => report('manifest', { manifest: sceneManifest() }));
 window.addEventListener('message', (event) => {
   if (event.source !== parent || payload || event.data?.type !== 'afgo-structure') return;
   operation(() => load(event.data));

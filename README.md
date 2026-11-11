@@ -40,7 +40,7 @@
 
 查看器支持 CIF、mmCIF、PDB、XYZ、EXTXYZ、SDF、MOL、MOL2 和 GRO。EXTXYZ 当前只显示坐标帧，额外的晶胞/PBC 属性应通过原文件或 CIF 核对；ASE 二进制轨迹、XTC、压缩包及压缩结构文件保留下载入口。结构预览上限为单文件 4 MiB、显示原子 100,000 个。文件清单可能含输入、中间文件和输出，展示预览时保留任务编号、原文件名和 SHA-256，结果判定沿用任务状态。
 
-智能体可调用 `afg_tasks` 的 `visualizations` 查询可视化候选；`get` 和 `files` 也附带候选清单。报告中可列出实际生成的图片、可视化入口及来源记录。 [可视化交接与验收说明](docs/VISUALIZATION_HANDOFF.md)
+智能体可调用 `afg_results` 自动生成结构图并附上任务已有的结果图。图片保存为 DSH 持久附件，在对话的结果卡片中直接显示；返回的 `report.markdown` 可直接用于最终回复。`afg_tasks get` 查询已经停止的任务时也会自动附带图片汇报。原始文件、来源摘要和相机记录随图保存。 [可视化交接与验收说明](docs/VISUALIZATION_HANDOFF.md)
 
 ### 智能体任务与工作流
 
@@ -67,6 +67,7 @@
 | `afg_platform` | 账号信息、可用模型、Kit／Agent 目录及输入要求 |
 | `afg_files` | 云端文件查询、上传与下载 |
 | `afg_tasks` | Agent 任务、Kit 提交、任务状态、产物管理及可视化候选 |
+| `afg_results` | 自动生成结构 PNG、附上已有结果图、在对话中展示并保存来源记录 |
 | `afg_workflows` | 工作流定义、校验、执行管理及智算会话 |
 | `afg_raw` | 面向开发者的底层接口调用 |
 
@@ -135,6 +136,7 @@ macOS 和 Linux 可通过 `bash scripts/run.sh info` 启动；Windows 可通过 
 | 项目 | 要求或说明 |
 |---|---|
 | Python | 3.8 或更高版本 |
+| 自动结构图 | 本机 Chrome/Chromium/兼容浏览器，或已有 Playwright Chromium；可用 `browserExecutable` 或 `AFGO_BROWSER` 指定路径 |
 | DSH | 插件运行需要匹配宿主版本；v1.3 工作台验证使用 0.2.2-rc.1 运行时 |
 | Node.js | 独立部署插件宿主时，遵循包内 `engines` 声明 |
 | 网络 | 能够通过 HTTPS 访问配置的平台地址及所需文件资源 |

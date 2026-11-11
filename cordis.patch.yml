@@ -9,6 +9,7 @@
 #   token      一般留空：令牌从 ~/.afg/config.json 或 AFG_TOKEN 读取，
 #              写在这里会随 profile 的 package.json 一起落盘，不推荐。
 #   timeoutMs  单次命令超时，默认 120000。
+#   browserExecutable  自动结构图使用的 Chrome/Chromium 可执行文件；留空自动探测。
 #
 # 注意：patch 会整体替换目标行的 config，profile 里若要覆盖某项，需把其余项一并重述。
 - insert:

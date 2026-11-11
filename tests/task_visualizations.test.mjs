@@ -15,6 +15,37 @@ registerHooks({
 });
 const { apply } = await import("../lib/index.js");
 
+test("completed task lookup and afg_results both persist inline-report metadata without requiring model vision", async () => {
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aEXsAAAAASUVORK5CYII=", "base64");
+  const server = createServer((request, response) => {
+    if (request.url.startsWith("/open/v1/files/plot/download")) {
+      response.setHeader("Content-Type", "image/png"); response.end(png); return;
+    }
+    const data = request.url.startsWith("/open/v1/tasks/files")
+      ? { files: [{ id: "plot", name: "result.png", size: png.length }] }
+      : { is_thinking: false, steps: [], messages: [] };
+    response.setHeader("Content-Type", "application/json");
+    response.end(JSON.stringify({ success: true, data }));
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const attachments = {
+      async saveImage({ data, name, mediaType }) { assert.deepEqual(data, png); return { attachmentId: "durable-image", name, mediaType, bytes: data.length, width: 1, height: 1 }; },
+      imageHostPath() { return "/persistent/result.png"; }
+    };
+    const tools = new Map();
+    apply({ get(name) { if (name === "attachments") return attachments; }, tools: { register(tool) { tools.set(tool.name, tool); } } },
+      { python: "python3", baseUrl: `http://127.0.0.1:${server.address().port}`, token: "local-test-only" });
+    const result = await tools.get("afg_tasks").execute({ action: "get", task_id: "85244" });
+    assert.equal(result.report.images.length, 1);
+    assert.equal(tools.get("afg_tasks").output.presentationMeta({}, result).afgoReport.images[0].attachment.attachmentId, "durable-image");
+    const direct = await tools.get("afg_results").execute({ task_id: "85244" });
+    const blocks = tools.get("afg_results").output.render({}, direct);
+    assert.match(blocks[0].text, /!\[.*\]\(<\/persistent\/result.png>\)/);
+    assert.ok(blocks.every((block) => block.type === "text"));
+  } finally { await new Promise((resolve) => server.close(resolve)); }
+});
+
 test("native task tool preserves get/files result and adds visualization candidates, including unavailable artifacts", async () => {
   let forbidden = false;
   const files = [{ id: "model", name: "final.cif", size: 123 }, { id: "report", name: "report.md" }];

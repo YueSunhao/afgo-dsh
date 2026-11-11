@@ -41,6 +41,27 @@ const exported = registration.factory((specifier) => {
 });
 const api = exported.__test;
 
+test("conversation image views register before the workbench remote becomes available", async () => {
+  const registered = [];
+  await exported.apply({
+    slots: {
+      inject(name, callback) { if (name === "tool.call.toolview") callback(); },
+      register(entry) { registered.push(entry); }
+    },
+    remote: { async $mount() {} },
+    async inject() {}
+  });
+  assert.deepEqual(registered.map((entry) => entry.key), ["afg_results", "afg_tasks"]);
+  assert.ok(registered.every((entry) => entry.children["tool.call.images"].scope === "session"));
+});
+
+test("conversation image reports survive result compaction through persisted presentation metadata", () => {
+  const report = { taskId: "85244", images: [{ attachment: { attachmentId: "image-reference" } }] };
+  assert.deepEqual(api.reportOfBlock({ content: [{ type: "text", text: JSON.stringify({ report }) }] }), report);
+  assert.deepEqual(api.reportOfBlock({ content: [{ type: "text", text: "truncated result" }], meta: { afgoReport: report } }), report);
+  assert.equal(api.reportOfBlock({ content: [] }), null);
+});
+
 test("visual result selection prioritizes final structures and table parsing supports TSV without treating blanks as zero", () => {
   const files = [
     { id: "plot", name: "rank.png", visualization: { kind: "image" } },
