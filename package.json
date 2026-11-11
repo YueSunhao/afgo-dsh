@@ -1,7 +1,7 @@
 {
   "name": "afgo-dsh",
-  "version": "1.3.0",
-  "description": "面向 DeepSeek Harness（DSH）的 AsterFire Go 科学智算插件，提供可视化工作台与 Agent Skill，支持 Kit／Agent 工具检索、云端任务管理、步骤时间线、工作流调用及计算结果获取。",
+  "version": "1.4.0",
+  "description": "面向 DeepSeek Harness（DSH）的 AsterFire Go 科学智算插件，提供可视化工作台与 Agent Skill，支持工具检索、任务时间线、Mol* 结构预览、结果图片与数值图、工作流调用及产物获取。",
   "keywords": [
     "dsh",
     "dsh-plugin",
@@ -46,6 +46,9 @@
     "workflow"
   ],
   "type": "module",
+  "scripts": {
+    "build:viewer": "node scripts/build-viewer.mjs"
+  },
   "main": "lib/index.js",
   "exports": {
     ".": "./lib/index.js",
@@ -55,6 +58,8 @@
   },
   "files": [
     "lib",
+    "viewer",
+    "docs",
     "scripts",
     "reference",
     "examples",
@@ -74,7 +79,10 @@
     },
     "client": {
       "platform": "web",
-      "inject": ["@deepseek-ai/dsh-api-remotes", "@deepseek-ai/dsh-client-ui-plugin-manager"]
+      "inject": [
+        "@deepseek-ai/dsh-api-remotes",
+        "@deepseek-ai/dsh-client-ui-plugin-manager"
+      ]
     },
     "engines": {
       "dsh": ">=0.1.7"
@@ -91,5 +99,9 @@
     "@deepseek-ai/dsh-tools": {
       "optional": true
     }
+  },
+  "devDependencies": {
+    "esbuild": "0.25.12",
+    "molstar": "5.13.1"
   }
 }

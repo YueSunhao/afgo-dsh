@@ -41,6 +41,18 @@ const exported = registration.factory((specifier) => {
 });
 const api = exported.__test;
 
+test("visual result selection prioritizes final structures and table parsing supports TSV without treating blanks as zero", () => {
+  const files = [
+    { id: "plot", name: "rank.png", visualization: { kind: "image" } },
+    { id: "input", name: "input.cif", visualization: { kind: "structure" } },
+    { id: "final", name: "slab_final.cif", visualization: { kind: "structure" } },
+    { id: "log", name: "run.log" }
+  ];
+  assert.deepEqual(api.visualizationCandidates(files).map((file) => file.id), ["final", "input", "plot"]);
+  const parsed = api.parseCsv('label\tenergy\tmissing\n"TiO2"\t1.61\t\n"test"\t-2\tNA', 40, "\t");
+  assert.deepEqual(api.numericColumns(parsed.rows).map((column) => column.name), ["energy"]);
+});
+
 const CATALOG = [
   { name: "PySCF", displayName: "PySCF", type: "agent", version: "1.0.5", versionSource: "demo", description: "quantum chemistry", tags: ["beta"] },
   { name: "GPU4PySCF", displayName: "GPU4PySCF", type: "agent", version: "1.0.1", versionSource: "icon", description: "", tags: [] },

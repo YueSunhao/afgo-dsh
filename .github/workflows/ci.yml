@@ -37,13 +37,15 @@ jobs:
         run: python -m unittest discover -s tests
 
       - name: Workbench client tests
-        run: node --test tests/workbench_client.test.mjs
+        run: node --test tests/*.test.mjs
 
       - name: Bundle manifest
         run: |
           node --check lib/index.js
           node --check lib/workbench.js
           node --check lib/client.js
+          node --check lib/visualization.js
+          node --check viewer/engine.js
           python - <<'PY'
           import json, pathlib
           pkg = json.loads(pathlib.Path("package.json").read_text(encoding="utf-8"))

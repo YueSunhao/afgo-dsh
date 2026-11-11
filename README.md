@@ -34,6 +34,14 @@
 
 工作台支持受限大小的 CSV、JSON、Markdown 和日志文件预览。单个文件的工作台下载上限为 4 MiB，较大文件可通过 AsterFire Go 平台网页端获取。
 
+### 结果可视化
+
+任务详情的「结果可视化」按任务文件清单自动识别结构、图片和数值表。Mol* 查看器在本地加载，支持旋转、缩放、原子球／球棍／蛋白骨架切换、坐标帧选择、PNG 导出及来源记录导出。晶体 CIF 与蛋白 mmCIF 按文件内容分别解析；晶胞在文件有记录时显示。图片保留任务生成的原图，CSV／TSV 可选择数值列，单个数值呈现指标卡，多行数据绘制散点图。
+
+查看器支持 CIF、mmCIF、PDB、XYZ、EXTXYZ、SDF、MOL、MOL2 和 GRO。EXTXYZ 当前只显示坐标帧，额外的晶胞/PBC 属性应通过原文件或 CIF 核对；ASE 二进制轨迹、XTC、压缩包及压缩结构文件保留下载入口。结构预览上限为单文件 4 MiB、显示原子 100,000 个。文件清单可能含输入、中间文件和输出，展示预览时保留任务编号、原文件名和 SHA-256，结果判定沿用任务状态。
+
+智能体可调用 `afg_tasks` 的 `visualizations` 查询可视化候选；`get` 和 `files` 也附带候选清单。报告中可列出实际生成的图片、可视化入口及来源记录。 [可视化交接与验收说明](docs/VISUALIZATION_HANDOFF.md)
+
 ### 智能体任务与工作流
 
 通过 DSH 原生工具调用 Agent 任务、Kit 计算和工作流接口，支持任务创建、状态查询、消息读取、产物获取及工作流执行管理。
@@ -58,7 +66,7 @@
 |---|---|
 | `afg_platform` | 账号信息、可用模型、Kit／Agent 目录及输入要求 |
 | `afg_files` | 云端文件查询、上传与下载 |
-| `afg_tasks` | Agent 任务、Kit 提交、任务状态及产物管理 |
+| `afg_tasks` | Agent 任务、Kit 提交、任务状态、产物管理及可视化候选 |
 | `afg_workflows` | 工作流定义、校验、执行管理及智算会话 |
 | `afg_raw` | 面向开发者的底层接口调用 |
 
@@ -165,3 +173,5 @@ API Key 应保存在宿主凭据服务或用户级配置中，避免进入项目
 - 官方命令行操作指南。 [AsterFire CLI 使用指南](https://sidereus-ai.feishu.cn/wiki/WKbSwmulLi9zGDkTvE3cGAhHnPh)
 - 智能体调用、配置与命令示例。 [Agent Skill 使用说明](SKILL.md)
 - 插件源码、版本记录与问题反馈。 [GitHub 仓库](https://github.com/YueSunhao/afgo-dsh) · [版本记录](CHANGELOG.md)
+
+结构预览使用 Mol* 5.13.1，按 MIT 许可证分发，源码和许可证随插件提供。设计参考 research-story-harness 的结构来源记录和表示方式，采用独立实现。 [Mol*](https://github.com/molstar/molstar) · [Mol* 许可证](lib/MOLSTAR-LICENSE) · [参考 skill](https://github.com/Phorbol/research-story-harness/tree/main/skills/ovito-structure)

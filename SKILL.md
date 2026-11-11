@@ -109,6 +109,14 @@ afg wf node-outputs <plan_id> <node_id> --execution-id <execution_id> --json
 
 ## 平台语义（最容易踩的坑）
 
+### 结果可视化与用户报告
+
+DSH 原生工具 `afg_tasks` 支持只读 `action=visualizations, task_id=<任务编号>`，返回结构、图片和 CSV/TSV 候选及工作台入口。`get` 与 `files` 的返回也包含 `visualizations`。这是 DSH 工具能力；独立 Python CLI 继续通过 `tasks files` 获取文件清单。
+
+每次汇报计算结果时，核对该任务的产物，附上可用的结构预览入口或已下载的结果图片，并说明任务编号、实际文件名与文件角色。工作台路径为「插件 → afgo-dsh → 我的任务 → 打开编号 → 结果可视化」。若已实际导出或下载图片，可使用本地文件链接或 Markdown 图片展示；没有生成图片时给出可操作的查看入口。
+
+结构预览使用本地 Mol*，可导出 PNG 与带任务 ID、文件 ID、SHA-256、相机和表示方式的 scene.json。渲染基于任务文件的真实坐标，文件清单可能同时含输入、中间文件与输出。晶胞及占据率以来源文件为准，自动推断的键线用于显示。EXTXYZ 当前只展示坐标帧；ASE `.traj`、XTC 和压缩结构文件需要下载后在合适工具中查看。缺少可视化文件时，在报告中注明并附现有报告/数据文件。
+
 - **ID 有六种，别混**：`file_id`（云盘/上传）、`task_id`（Agent 或 Kit 任务）、`step_id`（一次工具执行）、`plan_id`（工作流定义）、`execution_id`（工作流某次运行）、`node_id`（流程节点）。节点类查询**必须同时**带 `plan_id + node_id + execution_id`，查日志还要 `step_id`。
 - **异步**。`tasks create` / `kits submit` / `wf execute` 成功返回时，平台已受理请求。用 `tasks get` 查看 `outcome`（`success` / `partial` / `failed` / `unknown`），并核对步骤和产物。写入时发生网络错误，应先查询平台状态再决定是否重试。
 - **参数名大小写不统一**：同一平台里 `taskId` 和 `is_thinking` 并存。读字段前先 `--json` 看一次真实结构，别凭记忆写解析逻辑。
