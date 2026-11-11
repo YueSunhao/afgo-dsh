@@ -26,7 +26,8 @@ for (const path of [...packages].sort()) {
     catch (error) { if (error.code !== 'ENOENT') throw error; }
   }
   if (!notice) throw new Error(`Missing license text for bundled dependency ${pkg.name}`);
-  notices.push(`${pkg.name}@${pkg.version} (${pkg.license})\n${notice.replace(/\r\n?/g, '\n')}`);
+  const normalized = notice.replace(/\r\n?/g, '\n').split('\n').map((line) => line.trimEnd()).join('\n');
+  notices.push(`${pkg.name}@${pkg.version} (${pkg.license})\n${normalized}`);
 }
 await writeFile('lib/VIEWER-LICENSES.txt', notices.join('\n\n---\n\n'));
 console.log(`Built offline Mol* viewer (${Buffer.byteLength(html)} bytes)`);
