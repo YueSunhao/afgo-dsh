@@ -19,6 +19,37 @@ let disposed = false;
 let representationName = 'spacefill';
 let framing = 'structure';
 
+// Theme: the host page sends computed --afgo-* colours so the viewer follows
+// DSH light/dark. The headless renderer sends none and keeps the light
+// defaults baked into the HTML, so conversation images stay stable.
+const THEME_VARS = { fg: '--fg', fg2: '--fg-2', bg: '--bg', layer: '--layer', line: '--line', accent: '--accent', warn: '--warn' };
+let canvasBackground = 0xf5f7fb;
+
+function colorNumber(value) {
+  const probe = document.createElement('canvas').getContext('2d');
+  probe.fillStyle = '#000';
+  probe.fillStyle = String(value);
+  const normalized = probe.fillStyle;
+  if (/^#[0-9a-f]{6}$/i.test(normalized)) return parseInt(normalized.slice(1), 16);
+  const rgb = normalized.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+  return rgb ? (Number(rgb[1]) << 16) | (Number(rgb[2]) << 8) | Number(rgb[3]) : null;
+}
+
+function applyTheme(theme) {
+  if (!theme || typeof theme !== 'object') return;
+  for (const [key, cssVar] of Object.entries(THEME_VARS)) {
+    const value = typeof theme[key] === 'string' ? theme[key].trim() : '';
+    if (value && value.length < 120) document.documentElement.style.setProperty(cssVar, value);
+  }
+  const background = colorNumber(theme.bg);
+  if (background == null) return;
+  canvasBackground = background;
+  if (plugin?.canvas3d) {
+    plugin.canvas3d.setProps({ renderer: { backgroundColor: Color(background) } });
+    plugin.canvas3d.requestDraw();
+  }
+}
+
 function focusAtoms() {
   framing = 'structure';
   plugin.managers.camera.focusSphere(structure.data.boundary.sphere, { minRadius: 1, extraRadius: 1.5, durationMs: 0 });
@@ -82,8 +113,9 @@ async function showFrame(index) {
 
 async function load(message) {
   payload = message;
+  applyTheme(message.theme);
   const spec = DefaultPluginSpec();
-  spec.canvas3d = { renderer: { backgroundColor: Color(0xf5f7fb) }, camera: { mode: 'orthographic' } };
+  spec.canvas3d = { renderer: { backgroundColor: Color(canvasBackground) }, camera: { mode: 'orthographic' } };
   plugin = new PluginContext(spec);
   await plugin.init();
   if (disposed) { plugin.dispose(); return; }
@@ -144,7 +176,12 @@ function sceneManifest() {
 }
 document.getElementById('manifest').addEventListener('click', () => report('manifest', { manifest: sceneManifest() }));
 window.addEventListener('message', (event) => {
-  if (event.source !== parent || payload || event.data?.type !== 'afgo-structure') return;
+  if (event.source !== parent) return;
+  if (event.data?.type === 'afgo-theme') {
+    if (!payload || event.data.channel === payload.channel) applyTheme(event.data.theme);
+    return;
+  }
+  if (payload || event.data?.type !== 'afgo-structure') return;
   operation(() => load(event.data));
 });
 window.addEventListener('beforeunload', () => { disposed = true; });
