@@ -97,7 +97,7 @@
 在 DSH 插件管理器中添加 GitHub 仓库地址或已下载的插件安装包。
 
 ```text
-github:YueSunhao/afgo-dsh#workbench-v2-desktop
+github:YueSunhao/afgo-dsh
 ```
 
 安装完成后按宿主提示重新加载或重启 DSH，在工作台「设置」中填写 API Key 并验证账号。不同分支和版本的功能范围以对应的版本说明为准。 [版本记录](CHANGELOG.md)
