@@ -77,7 +77,7 @@ ln -s <skill-dir>/scripts/afg.py ~/bin/afg
 
 ```bash
 afg kits schema DSSP --json          # 先看 input_schema.fields：哪些必填、文件字段叫什么
-# file 字段只认公网 URL，把输入写进文件（Windows 上内联 JSON 会被 PowerShell 吃引号）：
+# file 字段填可访问的 URL 或字符串 file_id（见下文「平台语义」），把输入写进文件（Windows 上内联 JSON 会被 PowerShell 吃引号）：
 #   params.json: {"structure_file": "https://.../1cbs.cif.gz", "output_format": "mmcif"}
 afg kits submit --kit DSSP --input @params.json --json
 #   => task_id、step_id
@@ -122,7 +122,7 @@ DSH 原生工具 `afg_results` 接收 `task_id`，自动下载该任务中的代
 - **参数名大小写不统一**：同一平台里 `taskId` 和 `is_thinking` 并存。读字段前先 `--json` 看一次真实结构，别凭记忆写解析逻辑。
 - **目录版本**。`agents` 和 `kits list` 支持搜索展示名，提交使用注册名。用 `kits schema <注册名> --version <版本>` 检查特定目录版本，版本来自资产路径时以 `version_source` 为准。智算会话 ID 取自 `opencode_session_id`，消息分页使用 `next_cursor`。
 - **`--file` 在 `tasks create/send` 里是平台 file_id，不是本地路径**；本地的文件先 `cloud upload`。`wf node-input --file` 才是本地路径。
-- **Kit 的 file 字段：字符串 `file_id` 实测可被解析**（2026-11 复核：DSSP、pdb2pqr、PDBFixer-kit 都把它换成了真实文件）。但边界很脆：传 **JSON 数字** id 不会被解析（原样传入，运行期报文件不存在）；传**文件名**或不存在的 id 直接 500；字段名必须与 `input_schema` 一致，写错会被静默忽略。稳妥顺序：字符串 id → 可访问 URL → 改走 Agent 任务（`tasks create --file <file_id>`）。
+- **Kit 的 file 字段：字符串 `file_id` 实测可被解析**（2026-11 复核：DSSP、pdb2pqr、PDBFixer-kit 都把它换成了真实文件）。但边界很脆：传 **JSON 数字** id 不会被解析（原样传入，运行期报文件不存在）；传**文件名**或不存在的 id 直接 500；字段名必须与 `input_schema` 一致，写错会被静默忽略；file_id 只在上传它的环境有效，把生产环境的 id 拿到开发环境用会 500。稳妥顺序：字符串 id → 可访问 URL → 改走 Agent 任务（`tasks create --file <file_id>`）。
 - **`cloud upload` 的返回是 `data.file`**（真实 id 在 `data.file.id`），不是文档里写的顶层 `.id`。本技能的 `afg cloud upload` 已经把这一层压平，直接输出文件对象。
 - **Windows 上不要写内联 JSON**：`--input '{"a":1}'` 会被 PowerShell 5.1 的引号处理弄坏。一律写 `params.json` 再 `--input @params.json`（本技能会给出这个提示）。
 - **`kits submit` 的 input 结构由每个 kit 的 `input_schema` 决定**，不要照抄别的 kit 的示例。提交前 CLI 会按 schema 校验必填项与枚举值，不通过会直接报错（`--force` 跳过）；平台本身不校验，错了要等跑完才知道。
@@ -137,7 +137,7 @@ DSH 原生工具 `afg_results` 接收 `task_id`，自动下载该任务中的代
 | 情况 | 说明 |
 |---|---|
 | `wf tools` 500 | 服务端 `internal_error`，加不加 `--dag-only` 都复现（2026-10 实测）。工具契约改用 `wf tool-contract <name>` 或 `agents --full` 里的 `long_description`。 |
-| Kit 吃本地文件 | 见上文：file 字段只验证了公网 URL 可用，云盘 file_id 直传会在运行期失败。 |
+| Kit 吃本地文件 | 本地文件不能直接传，先 `cloud upload` 拿 id。file 字段接受字符串 file_id 或可访问的 URL；数字 id、文件名、跨环境 id 会失败，详见上文「平台语义」。 |
 | 大文件分片上传 | 走的是普通 multipart 一次性上传，没有实现 `/cloud-disk/uploads*` 那套分片会话。几十 MB 级别够用；上百 MB 建议改用官方 CLI。 |
 | `wf import/replace-yaml` | 请求体按 `{"yaml": "<yaml 文本>"}` 组装，服务端只声明了 `additionalProperties: true`，字段名未经实机验证；导入前务必先 `wf validate-yaml`。 |
 | 团队/协作 | `workspace_id` 相关参数原样透传，但当前账号 `workspaces: []`，团队路径没验证过。 |

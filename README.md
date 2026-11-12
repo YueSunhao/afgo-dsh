@@ -137,7 +137,7 @@ macOS 和 Linux 可通过 `bash scripts/run.sh info` 启动；Windows 可通过 
 |---|---|
 | Python | 3.8 或更高版本 |
 | 自动结构图 | 本机 Chrome/Chromium/兼容浏览器，或已有 Playwright Chromium；可用 `browserExecutable` 或 `AFGO_BROWSER` 指定路径 |
-| DSH | 插件运行需要匹配宿主版本；v1.3 工作台验证使用 0.2.2-rc.1 运行时 |
+| DSH | 当前适配桌面版 0.2.2-rc.2；v1.3 工作台与 v1.5 对话图片的完整验收在 0.2.2-rc.1 上完成，升级后建议按 [验收提示词](docs/DESKTOP_IMAGE_ACCEPTANCE_PROMPT.md) 回归 |
 | Node.js | 独立部署插件宿主时，遵循包内 `engines` 声明 |
 | 网络 | 能够通过 HTTPS 访问配置的平台地址及所需文件资源 |
 | 账号 | 有效的 AsterFire Go API Key 及所调用工具的访问权限 |
