@@ -272,9 +272,9 @@ test("version provenance never invents a number", () => {
   assert.deepEqual(api.versionText({ version: null }, null), { text: "版本未知", source: "目录未返回" });
 });
 
-test("status rows mark unread tasks 待查询 and reuse cached verdicts", () => {
+test("status rows mark unread tasks 未打开 and reuse cached verdicts", () => {
   assert.deepEqual(api.statusOfRow({ isThinking: true }, null), { state: "running", label: "执行中" });
-  assert.deepEqual(api.statusOfRow({ isThinking: false }, null), { state: "unresolved", label: "待查询" });
+  assert.deepEqual(api.statusOfRow({ isThinking: false }, null), { state: "unresolved", label: "未打开" });
   assert.deepEqual(api.statusOfRow({ isThinking: false }, { verdict: "success", verdictLabel: "成功" }), { state: "success", label: "成功" });
 });
 
@@ -339,4 +339,65 @@ test("exportName writes the extension once so save dialogs never produce .png.pn
   assert.equal(api.exportName("01.pdb"), "01.pdb");
   assert.equal(api.exportName("a/b:c.csv"), "a_b_c.csv");
   assert.equal(api.exportName("", "png"), "asterfire-result.png");
+});
+
+test("toneOf maps every row and verdict state to one dot tone; unopened rows are hollow", () => {
+  assert.equal(api.toneOf("running"), "run");
+  assert.equal(api.toneOf("queued"), "run");
+  assert.equal(api.toneOf("success"), "ok");
+  assert.equal(api.toneOf("failed"), "err");
+  for (const state of ["partial", "unknown", "stopped"]) assert.equal(api.toneOf(state), "warn");
+  assert.equal(api.toneOf("unresolved"), "unread");
+  assert.equal(api.toneOf("whatever"), undefined);
+});
+
+test("dateGroupOf groups by local calendar day and admits missing times", () => {
+  const now = new Date(2026, 10, 12, 15, 0, 0).getTime();
+  assert.equal(api.dateGroupOf(new Date(2026, 10, 12, 0, 5).toISOString(), now), "今天");
+  assert.equal(api.dateGroupOf(new Date(2026, 10, 11, 23, 59).toISOString(), now), "昨天");
+  assert.equal(api.dateGroupOf(new Date(2026, 10, 10, 12, 0).toISOString(), now), "更早");
+  assert.equal(api.dateGroupOf(null, now), "时间未返回");
+});
+
+test("summaryMetricsOf reads one row as a labelled metric and several rows as min/max, never 'best'", () => {
+  // Shape of the real MACE 85244 surface_energies.csv: long text columns,
+  // Miller indices, the same γ in two units, and a short File_ID label.
+  const header = "Termination,H,K,L,File_ID,FinalFmax_eV_A,NumAtoms,Gamma_eV_per_A2,Gamma_J_per_m2,Status";
+  const row = `"Top0: O2Ti1 | Top1: O2Ti1 | Top2: O2Ti1 | Bot0: O2Ti1",1,1,0,term_000,0.03902790955800484,24,0.10051132946470863,1.6103690211347326,success`;
+  const one = api.summaryMetricsOf(`${header}\n${row}\n`);
+  assert.equal(one.rows, 1);
+  assert.deepEqual(one.primary, { label: "表面能 γ", unit: "J/m²", value: "1.6104", raw: "1.6103690211347326",
+    column: "Gamma_J_per_m2", context: "term_000" });
+  assert.deepEqual(one.secondary.map((entry) => [entry.label, entry.value, entry.unit]),
+    [["最大残余力", "0.039028", "eV/Å"], ["原子数", "24", null]], "no H/K/L, no second unit of γ");
+
+  const many = api.summaryMetricsOf("term,E_ads_eV\nA,-0.52\nB,-1.25\nC,0.10\n");
+  assert.equal(many.rows, 3);
+  assert.equal(many.primary.label, "吸附能（最小）");
+  assert.equal(many.primary.value, "-1.25");
+  assert.equal(many.primary.context, "B · 共 3 行");
+  assert.equal(many.secondary[0].label, "吸附能（最大）");
+  assert.equal(many.secondary[0].value, "0.1");
+  assert.ok(!JSON.stringify(many).includes("最优"));
+
+  assert.equal(api.summaryMetricsOf("name,comment\na,b\n"), null);
+  assert.equal(api.summaryMetricsOf("only_header\n"), null);
+});
+
+test("summarySourcesOf prefers the primary-file rule, then result-looking small files", () => {
+  const files = [
+    { id: "big", name: "trajectory.csv", size: 9 * 1024 * 1024, visualization: { kind: "table" } },
+    { id: "raw", name: "bulk.csv", size: 100, visualization: { kind: "table" } },
+    { id: "main", name: "surface_energies.csv", size: 120, visualization: { kind: "table" } },
+    { id: "img1", name: "cell.png", size: 100, visualization: { kind: "image" } },
+    { id: "img2", name: "surface_energy_rank.png", size: 100, visualization: { kind: "image" } }
+  ];
+  const mace = api.summarySourcesOf("MACE-Flow-SurfaceInterface-Kit", files);
+  assert.equal(mace.primary.id, "main");
+  assert.equal(mace.table.id, "main");
+  assert.equal(mace.image.id, "img2");
+  const other = api.summarySourcesOf("SomethingElse", files);
+  assert.equal(other.primary, null);
+  assert.equal(other.table.id, "main", "name hint beats the first small table");
+  assert.deepEqual(api.summarySourcesOf("x", []), { primary: null, table: null, image: null });
 });
