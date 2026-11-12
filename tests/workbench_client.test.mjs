@@ -303,3 +303,40 @@ test("base64 preview decodes UTF-8 text", () => {
   const base64 = Buffer.from(text, "utf8").toString("base64");
   assert.equal(api.decodeBase64Text(base64), text);
 });
+
+test("formatValue keeps 5 significant digits, meV detail above 1000 and never invents a number", () => {
+  assert.equal(api.formatValue(1.6103690211347326), "1.6104");
+  assert.equal(api.formatValue(-1424.58761), "-1424.588");
+  assert.equal(api.formatValue(0.1 + 0.2), "0.3");
+  assert.equal(api.formatValue(2), "2");
+  assert.equal(api.formatValue("1.61"), "1.61");
+  assert.equal(api.formatValue(-0.00042), "-0.00042");
+  assert.equal(api.formatValue(0.000012345), "1.2345e-5");
+  assert.equal(api.formatValue(123456789), "1.2346e+8");
+  assert.equal(api.formatValue(0), "0");
+  for (const missing of ["", "NA", null, undefined, NaN, Infinity]) assert.equal(api.formatValue(missing), "—");
+});
+
+test("columnLabelOf parses units from result column names and keeps unknown names raw", () => {
+  assert.deepEqual(api.columnLabelOf("Gamma_J_per_m2"), { label: "表面能 γ", unit: "J/m²", raw: "Gamma_J_per_m2" });
+  assert.deepEqual(api.columnLabelOf("E_ads_eV"), { label: "吸附能", unit: "eV", raw: "E_ads_eV" });
+  assert.deepEqual(api.columnLabelOf("rmsd_A"), { label: "RMSD", unit: "Å", raw: "rmsd_A" });
+  assert.deepEqual(api.columnLabelOf("affinity_kcal_mol"), { label: "结合打分", unit: "kcal/mol", raw: "affinity_kcal_mol" });
+  assert.deepEqual(api.columnLabelOf("E_form_eV_per_atom"), { label: "形成能", unit: "eV/atom", raw: "E_form_eV_per_atom" });
+  assert.deepEqual(api.columnLabelOf("slab_thickness_A"), { label: "slab_thickness", unit: "Å", raw: "slab_thickness_A" });
+  assert.deepEqual(api.columnLabelOf("label"), { label: "label", unit: null, raw: "label" });
+  // lower-case `_a` is not ångström
+  assert.deepEqual(api.columnLabelOf("lattice_a"), { label: "lattice_a", unit: null, raw: "lattice_a" });
+  assert.equal(api.columnLabelOf("max_force_eV_per_A").unit, "eV/Å");
+  assert.equal(api.columnLabelOf("stress_eV_per_A2").unit, "eV/Å²");
+});
+
+test("exportName writes the extension once so save dialogs never produce .png.png", () => {
+  assert.equal(api.exportName("task-85244-slab.cif-frame-1.png", "png"), "task-85244-slab-cif-frame-1.png");
+  assert.equal(api.exportName("task-1-a.cif-scene", "json"), "task-1-a-cif-scene.json");
+  assert.equal(api.exportName("report.PNG.png", "png"), "report.png");
+  assert.equal(api.exportName("x.png.png"), "x.png");
+  assert.equal(api.exportName("01.pdb"), "01.pdb");
+  assert.equal(api.exportName("a/b:c.csv"), "a_b_c.csv");
+  assert.equal(api.exportName("", "png"), "asterfire-result.png");
+});

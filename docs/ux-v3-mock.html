@@ -1,0 +1,621 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>afgo-dsh UX v3 静态原型</title>
+<!--
+  静态原型，只用于评审 UX v3 的视觉、排版和信息层级，不是运行代码。
+  - 「宿主主题模拟」一段用来模拟 DSH 的 --dsw-alias-* 变量；深色取值是按截图估的近似值。
+    真实插件不定义这些变量，只读取宿主提供的值。
+  - 「afgo 设计令牌」一段以后会原样移到 lib/client.js 的 styles 顶部。
+  - 类名沿用 client.js 的 .afgo2-* 前缀，新增组件用 afgo2-* 新名。
+  - 所有数据都是假数据，取值参考任务 85244 / 84052 / 30470 的形态。
+  切换主题：给 <html> 加 data-theme="light" 或 "dark"，或在地址后面加 ?theme=light。
+-->
+<style>
+  /* ---------- 宿主主题模拟（插件里没有这一段） ---------- */
+  :root[data-theme=light] {
+    --dsw-alias-bg-base:#ffffff; --dsw-alias-bg-layer-1:#ffffff; --dsw-alias-bg-layer-2:#f5f6f8;
+    --dsw-alias-label-primary:#0f1115; --dsw-alias-label-secondary:#4b5057; --dsw-alias-label-tertiary:#71767d;
+    --dsw-alias-label-caption:#9aa0a6; --dsw-alias-label-primary-foreground:#ffffff;
+    --dsw-alias-border-l1:#0000000a; --dsw-alias-border-l2:#00000014; --dsw-alias-border-l3:#00000024;
+    --dsw-alias-link:#3b6fe0; --dsw-alias-button-primary-fill:#0f1115; --dsw-alias-interactive-bg-hover:#2631480f;
+    --dsw-alias-state-success-primary:#12863c; --dsw-alias-state-success-tertiary:#e6f7ec;
+    --dsw-alias-state-warn-primary:#d97706; --dsw-alias-state-warn-label:#a35b0b; --dsw-alias-state-warn-tertiary:#fdf3e2;
+    --dsw-alias-state-error-primary:#d92d20; --dsw-alias-state-error-tertiary:#fde8e7;
+    color-scheme:light;
+  }
+  :root[data-theme=dark] {
+    --dsw-alias-bg-base:#161618; --dsw-alias-bg-layer-1:#1c1c1f; --dsw-alias-bg-layer-2:#26262a;
+    --dsw-alias-label-primary:#eef0f3; --dsw-alias-label-secondary:#b7bbc2; --dsw-alias-label-tertiary:#8e939b;
+    --dsw-alias-label-caption:#6c7179; --dsw-alias-label-primary-foreground:#111214;
+    --dsw-alias-border-l1:#ffffff0d; --dsw-alias-border-l2:#ffffff17; --dsw-alias-border-l3:#ffffff26;
+    --dsw-alias-link:#7aa2ff; --dsw-alias-button-primary-fill:#eef0f3; --dsw-alias-interactive-bg-hover:#ffffff0f;
+    --dsw-alias-state-success-primary:#45c97a; --dsw-alias-state-success-tertiary:#1d3527;
+    --dsw-alias-state-warn-primary:#f0a630; --dsw-alias-state-warn-label:#f2b75c; --dsw-alias-state-warn-tertiary:#3a2e17;
+    --dsw-alias-state-error-primary:#ff6b61; --dsw-alias-state-error-tertiary:#3d1f1d;
+    color-scheme:dark;
+  }
+  html, body { margin:0; background:var(--dsw-alias-bg-base); }
+  body { --dsh-font-family-text:-apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+    --dsh-font-family-code:ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+  /* ---------- afgo 设计令牌（会移到 client.js） ---------- */
+  .afgo2 {
+    --afgo-s1:4px; --afgo-s2:8px; --afgo-s3:12px; --afgo-s4:16px; --afgo-s5:24px; --afgo-s6:32px;
+    --afgo-r-s:6px; --afgo-r-m:8px; --afgo-r-l:12px;
+    --afgo-fs-xs:12px; --afgo-fs-s:13px; --afgo-fs-m:14px; --afgo-fs-l:16px; --afgo-fs-xl:20px; --afgo-fs-xxl:28px;
+    --afgo-fg:var(--dsw-alias-label-primary, #0f1115);
+    --afgo-fg-2:var(--dsw-alias-label-secondary, #61666b);
+    --afgo-fg-3:var(--dsw-alias-label-tertiary, #81858c);
+    --afgo-fg-4:var(--dsw-alias-label-caption, #9aa0a6);
+    --afgo-bg:var(--dsw-alias-bg-base, #fff);
+    --afgo-layer-1:var(--dsw-alias-bg-layer-1, transparent);
+    --afgo-layer-2:var(--dsw-alias-bg-layer-2, #f7f8fa);
+    --afgo-line-1:var(--dsw-alias-border-l1, #0000000a);
+    --afgo-line-2:var(--dsw-alias-border-l2, #0000001a);
+    --afgo-line-3:var(--dsw-alias-border-l3, #0000001f);
+    --afgo-accent:var(--dsw-alias-link, #4176e6);
+    --afgo-ok:var(--dsw-alias-state-success-primary, #12863c);
+    --afgo-ok-soft:var(--dsw-alias-state-success-tertiary, #e6faed);
+    --afgo-warn:var(--dsw-alias-state-warn-label, #a35b0b);
+    --afgo-warn-dot:var(--dsw-alias-state-warn-primary, #f59e0b);
+    --afgo-warn-soft:var(--dsw-alias-state-warn-tertiary, #fef5e7);
+    --afgo-err:var(--dsw-alias-state-error-primary, #ec1313);
+    --afgo-err-soft:var(--dsw-alias-state-error-tertiary, #fee2e2);
+    --afgo-chart-1:var(--afgo-accent);
+    --afgo-chart-muted:var(--afgo-line-3);
+    color:var(--afgo-fg); font-family:var(--dsh-font-family-text, inherit);
+    font-size:var(--afgo-fs-m); line-height:1.55;
+  }
+  .afgo2 *, .afgo2 *::before, .afgo2 *::after { box-sizing:border-box; }
+  .afgo2 h1, .afgo2 h2, .afgo2 h3, .afgo2 h4, .afgo2 p { margin:0; }
+  .afgo2 ul { margin:0; padding:0; list-style:none; }
+  .afgo2 button, .afgo2 input, .afgo2 select { font:inherit; color:inherit; }
+
+  /* 按钮：主要 / 次要 / 文字 / 图标 */
+  .afgo2 button { background:transparent; border:1px solid var(--afgo-line-3); border-radius:var(--afgo-r-m);
+    min-height:32px; padding:0 var(--afgo-s3); cursor:pointer; display:inline-flex; align-items:center; gap:6px;
+    font-size:var(--afgo-fs-s); white-space:nowrap; }
+  .afgo2 button:hover { background:var(--dsw-alias-interactive-bg-hover, #2631480f); }
+  .afgo2 button[data-variant=primary] { background:var(--dsw-alias-button-primary-fill, #0f1115);
+    color:var(--dsw-alias-label-primary-foreground, #fff); border-color:transparent; font-weight:600; }
+  .afgo2 button[data-variant=text] { border-color:transparent; color:var(--afgo-fg-2); padding:0 var(--afgo-s2); }
+  .afgo2 button[data-variant=icon] { border-color:transparent; width:32px; padding:0; justify-content:center; color:var(--afgo-fg-2); }
+  .afgo2 input, .afgo2 select { background:var(--afgo-bg); border:1px solid var(--afgo-line-3);
+    border-radius:var(--afgo-r-m); min-height:32px; padding:0 10px; font-size:var(--afgo-fs-s); }
+
+  /* 基础排版 */
+  .afgo2-muted { color:var(--afgo-fg-2); }
+  .afgo2-caption { color:var(--afgo-fg-3); font-size:var(--afgo-fs-xs); }
+  .afgo2-mono { font-family:var(--dsh-font-family-code); font-variant-numeric:tabular-nums; }
+  .afgo2-num { font-variant-numeric:tabular-nums; }
+  .afgo2-card { background:var(--afgo-layer-1); border:1px solid var(--afgo-line-2); border-radius:var(--afgo-r-l); }
+
+  /* 状态：圆点 + 徽标，统一使用 data-tone */
+  .afgo2-dot { width:8px; height:8px; border-radius:50%; flex:none; background:var(--afgo-fg-4); display:inline-block; }
+  .afgo2-dot[data-tone=ok] { background:var(--afgo-ok); }
+  .afgo2-dot[data-tone=warn] { background:var(--afgo-warn-dot); }
+  .afgo2-dot[data-tone=err] { background:var(--afgo-err); }
+  .afgo2-dot[data-tone=run] { background:var(--afgo-accent); box-shadow:0 0 0 0 var(--afgo-accent); animation:afgo-pulse 1.6s infinite; }
+  .afgo2-dot[data-tone=unread] { background:transparent; border:1.5px solid var(--afgo-fg-4); }
+  @keyframes afgo-pulse { 0% { box-shadow:0 0 0 0 color-mix(in srgb, var(--afgo-accent) 55%, transparent); }
+    70% { box-shadow:0 0 0 6px transparent; } 100% { box-shadow:0 0 0 0 transparent; } }
+  .afgo2-chip { display:inline-flex; align-items:center; gap:6px; height:22px; padding:0 8px; border-radius:999px;
+    font-size:var(--afgo-fs-xs); white-space:nowrap; background:var(--afgo-layer-2); color:var(--afgo-fg-2); }
+  .afgo2-chip[data-tone=ok] { background:var(--afgo-ok-soft); color:var(--afgo-ok); }
+  .afgo2-chip[data-tone=warn] { background:var(--afgo-warn-soft); color:var(--afgo-warn); }
+  .afgo2-chip[data-tone=err] { background:var(--afgo-err-soft); color:var(--afgo-err); }
+  .afgo2-chip[data-tone=run] { background:color-mix(in srgb, var(--afgo-accent) 14%, transparent); color:var(--afgo-accent); }
+
+  /* ⓘ 提示：代替常驻的说明小字 */
+  .afgo2-hint { display:inline-grid; place-items:center; width:16px; height:16px; border-radius:50%;
+    border:1px solid var(--afgo-line-3); color:var(--afgo-fg-3); font-size:10px; font-weight:600; cursor:help; position:relative; }
+  .afgo2-hint:hover::after { content:attr(data-tip); position:absolute; left:50%; top:22px; transform:translateX(-50%);
+    width:240px; padding:8px 10px; border-radius:var(--afgo-r-m); background:var(--afgo-layer-2);
+    border:1px solid var(--afgo-line-2); color:var(--afgo-fg-2); font-size:var(--afgo-fs-xs); font-weight:400;
+    line-height:1.5; z-index:10; box-shadow:0 8px 24px #0000002e; }
+
+  /* ---------- 工作台：顶栏 ---------- */
+  .afgo2 { display:flex; flex-direction:column; gap:var(--afgo-s4); }
+  .afgo2-bar { display:flex; align-items:center; gap:var(--afgo-s3); flex-wrap:wrap; }
+  .afgo2-brand { font-size:var(--afgo-fs-l); font-weight:600; }
+  .afgo2-account { display:inline-flex; align-items:center; gap:8px; height:32px; padding:0 var(--afgo-s3);
+    border-radius:999px; background:var(--afgo-layer-2); font-size:var(--afgo-fs-xs); color:var(--afgo-fg-2);
+    border:1px solid transparent; cursor:pointer; }
+  .afgo2-account b { color:var(--afgo-fg); font-weight:600; }
+  .afgo2-account .sep { color:var(--afgo-fg-4); }
+  .afgo2-spacer { flex:1 1 auto; }
+  .afgo2-open { display:flex; align-items:center; border:1px solid var(--afgo-line-3); border-radius:var(--afgo-r-m);
+    height:32px; padding-left:10px; background:var(--afgo-bg); }
+  .afgo2-open span { color:var(--afgo-fg-4); font-size:var(--afgo-fs-s); }
+  .afgo2-open input { border:0; width:110px; padding:0 6px; min-height:30px; background:transparent; }
+  .afgo2-open button { border:0; border-left:1px solid var(--afgo-line-3); border-radius:0 var(--afgo-r-m) var(--afgo-r-m) 0; }
+  .afgo2-tabs { display:flex; gap:var(--afgo-s1); border-bottom:1px solid var(--afgo-line-2); }
+  .afgo2-tab { border:0 !important; border-radius:0 !important; border-bottom:2px solid transparent !important;
+    padding:0 var(--afgo-s3) !important; min-height:36px !important; color:var(--afgo-fg-3); font-size:var(--afgo-fs-m) !important; }
+  .afgo2-tab[aria-selected=true] { color:var(--afgo-fg); border-bottom-color:var(--afgo-fg) !important; font-weight:600; }
+  .afgo2-tab .count { color:var(--afgo-fg-4); font-weight:400; margin-left:4px; }
+
+  /* ---------- 工作台：列表 + 详情，整页只有一个滚动条 ---------- */
+  .afgo2-tasks { display:grid; grid-template-columns:minmax(260px, 320px) minmax(0, 1fr); gap:var(--afgo-s5); align-items:start; }
+  .afgo2-listpane { position:sticky; top:var(--afgo-s4); display:flex; flex-direction:column; gap:var(--afgo-s2);
+    max-height:calc(100vh - 32px); }
+  .afgo2-filters { display:flex; gap:var(--afgo-s2); }
+  .afgo2-filters input { flex:1; }
+  .afgo2-list { display:flex; flex-direction:column; overflow:auto; margin:0 -4px; padding:0 4px; }
+  .afgo2-row { display:grid; grid-template-columns:8px minmax(0,1fr); gap:10px; align-items:baseline;
+    padding:10px var(--afgo-s2); border-radius:var(--afgo-r-m); cursor:pointer; }
+  .afgo2-row:hover { background:var(--dsw-alias-interactive-bg-hover, #2631480f); }
+  .afgo2-row[aria-current=true] { background:var(--afgo-layer-2); }
+  .afgo2-row .afgo2-dot { transform:translateY(-1px); }
+  .afgo2-row-title { font-size:var(--afgo-fs-s); font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .afgo2-row-meta { font-size:var(--afgo-fs-xs); color:var(--afgo-fg-3); display:flex; gap:6px; margin-top:2px; }
+  .afgo2-row-meta .sep { color:var(--afgo-fg-4); }
+  .afgo2-group { font-size:11px; color:var(--afgo-fg-4); padding:var(--afgo-s3) var(--afgo-s2) var(--afgo-s1); letter-spacing:.02em; }
+
+  /* ---------- 任务详情：结论优先 ---------- */
+  .afgo2-detail { display:flex; flex-direction:column; gap:var(--afgo-s4); min-width:0; }
+  .afgo2-dhead { display:flex; flex-direction:column; gap:6px; }
+  .afgo2-eyebrow { display:flex; gap:8px; align-items:center; font-size:var(--afgo-fs-xs); color:var(--afgo-fg-3); }
+  .afgo2-dtitle { font-size:var(--afgo-fs-xl); font-weight:600; line-height:1.35; }
+  .afgo2-signals { display:flex; gap:var(--afgo-s4); flex-wrap:wrap; align-items:center; font-size:var(--afgo-fs-xs); color:var(--afgo-fg-3); }
+  .afgo2-signal { display:inline-flex; align-items:center; gap:6px; }
+  .afgo2-signal b { color:var(--afgo-fg); font-weight:500; font-size:var(--afgo-fs-s); }
+
+  .afgo2-summary { display:grid; grid-template-columns:minmax(0,1fr) 220px; overflow:hidden; }
+  .afgo2-summary-main { padding:var(--afgo-s4) var(--afgo-s5); display:flex; flex-direction:column; gap:var(--afgo-s3); }
+  .afgo2-summary-media { background:var(--afgo-layer-2); border-left:1px solid var(--afgo-line-2); display:grid; place-items:center; }
+  .afgo2-metric .k { font-size:var(--afgo-fs-xs); color:var(--afgo-fg-3); display:flex; gap:6px; align-items:center; }
+  .afgo2-metric .v { font-size:var(--afgo-fs-xxl); font-weight:600; line-height:1.2; font-variant-numeric:tabular-nums; letter-spacing:-.01em; }
+  .afgo2-metric .v small { font-size:var(--afgo-fs-m); font-weight:500; color:var(--afgo-fg-2); margin-left:4px; letter-spacing:0; }
+  .afgo2-metric .c { font-size:var(--afgo-fs-xs); color:var(--afgo-fg-3); }
+  .afgo2-metrics { display:flex; gap:var(--afgo-s6); flex-wrap:wrap; }
+  .afgo2-metrics .afgo2-metric .v { font-size:var(--afgo-fs-xl); }
+  .afgo2-summary-actions { display:flex; gap:var(--afgo-s2); flex-wrap:wrap; margin-top:var(--afgo-s1); }
+
+  /* 文件切换：分段按钮代替下拉框 */
+  .afgo2-seg { display:flex; gap:var(--afgo-s1); flex-wrap:wrap; }
+  .afgo2-seg button { height:28px; min-height:28px; border-color:var(--afgo-line-2); color:var(--afgo-fg-2); font-size:var(--afgo-fs-xs); }
+  .afgo2-seg button[aria-pressed=true] { background:var(--afgo-layer-2); border-color:var(--afgo-line-3); color:var(--afgo-fg); }
+  .afgo2-seg .kind { color:var(--afgo-fg-4); }
+
+  /* Mol* 视图外框 */
+  .afgo2-viewer { overflow:hidden; display:flex; flex-direction:column; }
+  .afgo2-viewer-bar { display:flex; align-items:center; gap:var(--afgo-s1); padding:6px var(--afgo-s2);
+    border-bottom:1px solid var(--afgo-line-1); }
+  .afgo2-viewer-bar select { height:28px; min-height:28px; }
+  .afgo2-viewer-bar button { height:28px; min-height:28px; }
+  .afgo2-canvas { aspect-ratio:4 / 3; min-height:360px; max-height:620px; background:var(--afgo-bg); position:relative; }
+  .afgo2-canvas svg { width:100%; height:100%; display:block; }
+  .afgo2-viewer-foot { display:flex; gap:var(--afgo-s3); flex-wrap:wrap; padding:8px var(--afgo-s3);
+    border-top:1px solid var(--afgo-line-1); font-size:var(--afgo-fs-xs); color:var(--afgo-fg-3); }
+  .afgo2-viewer-foot .warnish { color:var(--afgo-warn); }
+
+  /* 图表 */
+  .afgo2-chart { padding:var(--afgo-s4) var(--afgo-s5); display:flex; flex-direction:column; gap:var(--afgo-s3); }
+  .afgo2-chart-head { display:flex; align-items:baseline; justify-content:space-between; gap:var(--afgo-s3); }
+  .afgo2-chart-head h4 { font-size:var(--afgo-fs-s); font-weight:600; }
+  .afgo2-hbar { display:grid; grid-template-columns:72px minmax(0,1fr) 64px; gap:6px var(--afgo-s3); align-items:center; font-size:var(--afgo-fs-xs); }
+  .afgo2-hbar .lab { color:var(--afgo-fg-2); font-family:var(--dsh-font-family-code); }
+  .afgo2-hbar .track { height:14px; position:relative; }
+  .afgo2-hbar .fill { position:absolute; inset:0 auto 0 0; border-radius:0 3px 3px 0; background:var(--afgo-chart-muted); }
+  .afgo2-hbar .fill[data-hi] { background:var(--afgo-chart-1); }
+  .afgo2-hbar .val { text-align:right; font-variant-numeric:tabular-nums; color:var(--afgo-fg-2); }
+  .afgo2-hbar .val[data-hi] { color:var(--afgo-fg); font-weight:600; }
+  .afgo2-svgchart text { fill:var(--afgo-fg-3); font-size:11px; font-family:var(--dsh-font-family-text); }
+  .afgo2-svgchart .grid { stroke:var(--afgo-line-2); }
+  .afgo2-svgchart .axis { stroke:var(--afgo-line-3); }
+  .afgo2-svgchart .line { stroke:var(--afgo-chart-1); fill:none; stroke-width:2; }
+  .afgo2-svgchart .last { fill:var(--afgo-chart-1); }
+
+  /* 时间线：纵向步进条 */
+  .afgo2-steps { display:flex; flex-direction:column; }
+  .afgo2-step { display:grid; grid-template-columns:20px minmax(0,1fr) auto; gap:var(--afgo-s3); }
+  .afgo2-step .rail { display:flex; flex-direction:column; align-items:center; }
+  .afgo2-step .node { width:12px; height:12px; border-radius:50%; margin-top:5px; border:2px solid var(--afgo-ok); background:var(--afgo-ok); }
+  .afgo2-step .node[data-tone=run] { background:var(--afgo-bg); border-color:var(--afgo-accent); }
+  .afgo2-step .node[data-tone=wait] { background:var(--afgo-bg); border-color:var(--afgo-line-3); }
+  .afgo2-step .node[data-tone=err] { background:var(--afgo-err); border-color:var(--afgo-err); }
+  .afgo2-step .line { flex:1; width:2px; background:var(--afgo-line-2); margin:4px 0; }
+  .afgo2-step:last-child .line { display:none; }
+  .afgo2-step .body { padding-bottom:var(--afgo-s4); min-width:0; }
+  .afgo2-step .name { font-size:var(--afgo-fs-s); font-weight:600; display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .afgo2-step .times { font-size:var(--afgo-fs-xs); color:var(--afgo-fg-3); margin-top:2px; font-variant-numeric:tabular-nums; }
+  .afgo2-step .dur { font-size:var(--afgo-fs-xs); color:var(--afgo-fg-2); text-align:right; font-variant-numeric:tabular-nums; padding-top:2px; }
+  .afgo2-step .seg { display:flex; height:6px; border-radius:3px; overflow:hidden; margin-top:8px; max-width:360px; background:var(--afgo-layer-2); }
+  .afgo2-step .seg .q { background:repeating-linear-gradient(90deg, var(--afgo-line-3) 0 4px, transparent 4px 7px); }
+  .afgo2-step .seg .r { background:var(--afgo-ok); }
+  .afgo2-step .seg .r[data-tone=run] { background:var(--afgo-accent); }
+  .afgo2-legend { display:flex; gap:var(--afgo-s4); font-size:var(--afgo-fs-xs); color:var(--afgo-fg-3); }
+  .afgo2-legend i { display:inline-block; width:14px; height:6px; border-radius:3px; margin-right:6px; vertical-align:middle; }
+
+  /* 工作流节点 */
+  .afgo2-wf { display:flex; align-items:stretch; gap:0; overflow-x:auto; padding-bottom:4px; }
+  .afgo2-wf-node { min-width:150px; padding:10px 12px; border:1px solid var(--afgo-line-2); border-radius:var(--afgo-r-m);
+    background:var(--afgo-layer-1); display:flex; flex-direction:column; gap:4px; }
+  .afgo2-wf-node .n { font-size:var(--afgo-fs-s); font-weight:600; display:flex; gap:6px; align-items:center; }
+  .afgo2-wf-node .m { font-size:var(--afgo-fs-xs); color:var(--afgo-fg-3); }
+  .afgo2-wf-node a { color:var(--afgo-accent); font-size:var(--afgo-fs-xs); text-decoration:none; }
+  .afgo2-wf-arrow { align-self:center; width:28px; height:2px; background:var(--afgo-line-3); flex:none; position:relative; }
+  .afgo2-wf-arrow::after { content:""; position:absolute; right:-1px; top:-3px; border:4px solid transparent; border-left:5px solid var(--afgo-line-3); }
+
+  /* 可折叠区块「来源与校验」 */
+  .afgo2-disclosure { border-top:1px solid var(--afgo-line-1); }
+  .afgo2-disclosure summary { cursor:pointer; list-style:none; padding:10px 0 0; font-size:var(--afgo-fs-xs); color:var(--afgo-fg-3);
+    display:flex; align-items:center; gap:6px; }
+  .afgo2-disclosure summary::before { content:"›"; display:inline-block; transition:transform .15s; font-size:14px; }
+  .afgo2-disclosure[open] summary::before { transform:rotate(90deg); }
+  .afgo2-prov { display:grid; grid-template-columns:auto minmax(0,1fr) auto; gap:4px 12px; font-size:var(--afgo-fs-xs); padding-top:8px; align-items:center; }
+  .afgo2-prov dt { color:var(--afgo-fg-3); }
+  .afgo2-prov dd { margin:0; font-family:var(--dsh-font-family-code); color:var(--afgo-fg-2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+  /* 骨架屏 / 空状态 / 错误 */
+  .afgo2-skel { border-radius:4px; background:linear-gradient(90deg, var(--afgo-layer-2) 0%, var(--afgo-line-2) 50%, var(--afgo-layer-2) 100%);
+    background-size:200% 100%; animation:afgo-shimmer 1.4s infinite; height:12px; }
+  @keyframes afgo-shimmer { from { background-position:200% 0; } to { background-position:-200% 0; } }
+  .afgo2-empty { display:flex; flex-direction:column; align-items:center; gap:6px; text-align:center; padding:var(--afgo-s6) var(--afgo-s4); }
+  .afgo2-empty b { font-size:var(--afgo-fs-m); }
+  .afgo2-notice { display:flex; gap:10px; align-items:flex-start; padding:10px 12px; border-radius:var(--afgo-r-m); font-size:var(--afgo-fs-s); }
+  .afgo2-notice[data-tone=err] { background:var(--afgo-err-soft); color:var(--afgo-err); }
+  .afgo2-notice[data-tone=warn] { background:var(--afgo-warn-soft); color:var(--afgo-warn); }
+  .afgo2-notice .grow { flex:1; }
+  .afgo2-notice small { display:block; opacity:.85; font-size:var(--afgo-fs-xs); }
+
+  /* 对话卡片 */
+  .afgo2-tc { padding:var(--afgo-s4); display:flex; flex-direction:column; gap:var(--afgo-s3); max-width:720px; }
+  .afgo2-tc-head { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .afgo2-tc-head .t { font-weight:600; font-size:var(--afgo-fs-m); }
+  .afgo2-tc-head .id { font-family:var(--dsh-font-family-code); color:var(--afgo-fg-3); font-size:var(--afgo-fs-s); }
+  .afgo2-tc-head .when { margin-left:auto; color:var(--afgo-fg-4); font-size:var(--afgo-fs-xs); }
+  .afgo2-tc-imgs { display:grid; grid-template-columns:1fr 1fr; gap:var(--afgo-s2); }
+  .afgo2-tc-imgs figure { margin:0; border-radius:var(--afgo-r-m); overflow:hidden; border:1px solid var(--afgo-line-2); background:var(--afgo-layer-2); }
+  .afgo2-tc-imgs .ph { aspect-ratio:4/3; display:grid; place-items:center; }
+  .afgo2-tc-imgs figcaption { font-size:var(--afgo-fs-xs); color:var(--afgo-fg-3); padding:6px 10px; border-top:1px solid var(--afgo-line-1);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .afgo2-progress { height:4px; border-radius:2px; background:var(--afgo-layer-2); overflow:hidden; }
+  .afgo2-progress i { display:block; height:100%; background:var(--afgo-accent); border-radius:2px; }
+
+  /* ---------- 只属于原型页面的画板外框 ---------- */
+  .board { max-width:1180px; margin:0 auto; padding:32px 28px 56px; display:flex; flex-direction:column; gap:40px; }
+  .board > section > .label { font:600 11px/1 var(--dsh-font-family-text); letter-spacing:.08em; text-transform:uppercase;
+    color:var(--dsw-alias-label-caption); margin-bottom:14px; display:flex; gap:10px; align-items:center; }
+  .board > section > .label::after { content:""; flex:1; height:1px; background:var(--dsw-alias-border-l2); }
+  .two { display:grid; grid-template-columns:1fr 1fr; gap:var(--afgo-s5); }
+  .three { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:var(--afgo-s4); }
+  .pad { padding:var(--afgo-s4) var(--afgo-s5); }
+
+  /* 窄屏（宿主给的宽度 < 860px） */
+  @media (max-width: 860px) {
+    .afgo2-tasks { grid-template-columns:minmax(0,1fr); }
+    .afgo2-listpane { position:static; max-height:none; }
+    .afgo2-tasks[data-pane=detail] .afgo2-listpane { display:none; }
+    .afgo2-back { display:inline-flex !important; }
+    .afgo2-summary { grid-template-columns:minmax(0,1fr); }
+    .afgo2-summary-media { border-left:0; border-top:1px solid var(--afgo-line-2); height:180px; }
+    .afgo2-open input { width:80px; }
+    .two, .three, .afgo2-tc-imgs { grid-template-columns:minmax(0,1fr); }
+    .afgo2-hbar { grid-template-columns:64px minmax(0,1fr) 56px; }
+    .board { padding:20px 16px 40px; }
+  }
+  @media (prefers-reduced-motion: reduce) { .afgo2 * { animation:none !important; transition:none !important; } }
+</style>
+</head>
+<body>
+<div class="board">
+
+<!-- ================= 画板 1：工作台 · 任务详情 ================= -->
+<section id="workbench">
+  <div class="label">1 · 工作台 · 我的任务（已连接，打开 #85244）</div>
+  <div class="afgo2">
+    <div class="afgo2-bar">
+      <span class="afgo2-brand">AsterFire Go</span>
+      <button class="afgo2-account" title="账号与环境（点击进入设置）">
+        <span class="afgo2-dot" data-tone="ok"></span><b>180****0356</b><span class="sep">·</span>生产环境<span class="sep">·</span>16:35 同步
+      </button>
+      <span class="afgo2-spacer"></span>
+      <label class="afgo2-open"><span>#</span><input placeholder="任务编号" value="" aria-label="任务编号"><button>打开</button></label>
+    </div>
+    <div class="afgo2-tabs" role="tablist">
+      <button class="afgo2-tab" role="tab" aria-selected="true">我的任务</button>
+      <button class="afgo2-tab" role="tab" aria-selected="false">发现工具</button>
+      <button class="afgo2-tab" role="tab" aria-selected="false">设置</button>
+    </div>
+
+    <div class="afgo2-tasks" data-pane="detail">
+      <!-- 列表 -->
+      <aside class="afgo2-listpane">
+        <div class="afgo2-filters">
+          <input placeholder="搜索名称、工具或 #编号" aria-label="搜索任务">
+          <select aria-label="状态"><option>全部</option></select>
+        </div>
+        <ul class="afgo2-list">
+          <li class="afgo2-group">今天</li>
+          <li class="afgo2-row"><span class="afgo2-dot" data-tone="run"></span><div>
+            <div class="afgo2-row-title">AutoDock-Vina-GPU 对接 · 5R82 口袋</div>
+            <div class="afgo2-row-meta"><span class="afgo2-mono">#89342</span><span class="sep">·</span>运行中 6m<span class="sep">·</span>14:57</div></div></li>
+          <li class="afgo2-row"><span class="afgo2-dot" data-tone="unread" title="未打开，状态未读取"></span><div>
+            <div class="afgo2-row-title">AutoDock-Vina-GPU 对接 · 5R82 口袋</div>
+            <div class="afgo2-row-meta"><span class="afgo2-mono">#89341</span><span class="sep">·</span>Kit<span class="sep">·</span>14:55</div></div></li>
+          <li class="afgo2-row"><span class="afgo2-dot" data-tone="unread" title="未打开，状态未读取"></span><div>
+            <div class="afgo2-row-title">PocketXMol 小分子生成 · 口袋 A</div>
+            <div class="afgo2-row-meta"><span class="afgo2-mono">#89334</span><span class="sep">·</span>Kit<span class="sep">·</span>14:52</div></div></li>
+          <li class="afgo2-group">更早</li>
+          <li class="afgo2-row" aria-current="true"><span class="afgo2-dot" data-tone="ok"></span><div>
+            <div class="afgo2-row-title">MACE 表面能 · TiO₂ (110)</div>
+            <div class="afgo2-row-meta"><span class="afgo2-mono">#85244</span><span class="sep">·</span>成功<span class="sep">·</span>11-10 18:41<span class="sep">·</span>1m 12s</div></div></li>
+          <li class="afgo2-row"><span class="afgo2-dot" data-tone="warn"></span><div>
+            <div class="afgo2-row-title">PySCF 单点 · 水分子</div>
+            <div class="afgo2-row-meta"><span class="afgo2-mono">#84052</span><span class="sep">·</span>待核实<span class="sep">·</span>11-09 10:12</div></div></li>
+          <li class="afgo2-row"><span class="afgo2-dot" data-tone="err"></span><div>
+            <div class="afgo2-row-title">DSSP 二级结构 · 1CRN</div>
+            <div class="afgo2-row-meta"><span class="afgo2-mono">#73045</span><span class="sep">·</span>失败<span class="sep">·</span>11-02 09:30</div></div></li>
+          <li class="afgo2-row"><span class="afgo2-dot" data-tone="ok"></span><div>
+            <div class="afgo2-row-title">吸附能筛选工作流 · 3 节点</div>
+            <div class="afgo2-row-meta"><span class="afgo2-mono">plan 30470</span><span class="sep">·</span>工作流<span class="sep">·</span>10-28</div></div></li>
+        </ul>
+        <button data-variant="text" style="align-self:flex-start">加载更多</button>
+      </aside>
+
+      <!-- 详情 -->
+      <div class="afgo2-detail">
+        <div class="afgo2-dhead">
+          <button data-variant="text" class="afgo2-back" style="display:none;align-self:flex-start;padding:0">← 任务列表</button>
+          <div class="afgo2-eyebrow"><span class="afgo2-mono">#85244</span><span>·</span><span>MACE-Flow-SurfaceInterface-Kit 1.0.6</span><span>·</span><span>surface_energy</span></div>
+          <h2 class="afgo2-dtitle">MACE 表面能 · TiO₂ (110)，3 层 slab</h2>
+          <div class="afgo2-signals">
+            <span class="afgo2-signal">执行 <span class="afgo2-dot" data-tone="ok"></span><b>已完成</b> 1/1 步</span>
+            <span class="afgo2-signal">判定 <span class="afgo2-chip" data-tone="ok">成功</span>
+              <span class="afgo2-hint" data-tip="判定依据：步骤 527223 返回结构化输出，success=true。判定与执行状态分开显示。">i</span></span>
+            <span class="afgo2-signal">同步 <span class="afgo2-dot" data-tone="ok"></span><b>正常</b> 16:30</span>
+          </div>
+        </div>
+
+        <!-- 结果摘要卡 -->
+        <div class="afgo2-card afgo2-summary">
+          <div class="afgo2-summary-main">
+            <div class="afgo2-metric">
+              <div class="k">表面能 γ <span class="afgo2-hint" data-tip="来自主结果 surface_energies.csv 的列 Gamma_J_per_m2，第 1 行。原始值 1.6103690211347326。">i</span></div>
+              <div class="v">1.6104<small>J/m²</small></div>
+              <div class="c">term_000 · 终端 1/1</div>
+            </div>
+            <div class="afgo2-metrics">
+              <div class="afgo2-metric"><div class="k">原子数</div><div class="v">24</div></div>
+              <div class="afgo2-metric"><div class="k">元素</div><div class="v">O · Ti</div></div>
+              <div class="afgo2-metric"><div class="k">运行时长</div><div class="v">1m 12s</div></div>
+            </div>
+            <div class="afgo2-summary-actions">
+              <button data-variant="primary">下载主结果</button>
+              <button>全部文件 · 16</button>
+            </div>
+          </div>
+          <div class="afgo2-summary-media">
+            <svg viewBox="0 0 200 160" width="200" height="160" aria-label="代表结构缩略图">
+              <g id="mini"></g>
+            </svg>
+          </div>
+        </div>
+
+        <div class="afgo2-tabs" role="tablist">
+          <button class="afgo2-tab" role="tab" aria-selected="true">结果</button>
+          <button class="afgo2-tab" role="tab" aria-selected="false">过程</button>
+          <button class="afgo2-tab" role="tab" aria-selected="false">文件<span class="count">16</span></button>
+          <button class="afgo2-tab" role="tab" aria-selected="false">详情</button>
+        </div>
+
+        <div class="afgo2-seg" role="group" aria-label="选择结果文件">
+          <button aria-pressed="true">slab_term_000_final.cif <span class="kind">结构</span></button>
+          <button aria-pressed="false">surface_energy_rank.png <span class="kind">图</span></button>
+          <button aria-pressed="false">surface_energies.csv <span class="kind">表</span></button>
+          <button aria-pressed="false">bulk.cif <span class="kind">结构</span></button>
+        </div>
+
+        <div class="afgo2-card afgo2-viewer">
+          <div class="afgo2-viewer-bar">
+            <select aria-label="表示方式"><option>球棍</option><option>原子球</option></select>
+            <button data-variant="text">聚焦</button>
+            <button data-variant="text">重置视野</button>
+            <span class="afgo2-spacer"></span>
+            <button data-variant="icon" title="全屏" aria-label="全屏">⤢</button>
+            <button data-variant="icon" title="导出 PNG · 来源记录 · 关于查看器" aria-label="更多">⋯</button>
+          </div>
+          <div class="afgo2-canvas"><svg viewBox="0 0 640 480" preserveAspectRatio="xMidYMid meet" aria-label="TiO2 slab 结构视图示意"><g id="big"></g></svg></div>
+          <div class="afgo2-viewer-foot">
+            <span>24 原子 · O, Ti</span><span>晶胞 6.50 × 2.96 × 21.4 Å</span><span>原始坐标，未生成超胞</span>
+            <span class="warnish">键线为推断邻接</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 画板 2：数值结果三种形态 ================= -->
+<section id="charts">
+  <div class="label">2 · 数值结果：单值 / 少量分组 / 序列</div>
+  <div class="afgo2">
+    <div class="three">
+      <div class="afgo2-card pad">
+        <div class="afgo2-metric">
+          <div class="k">表面能 γ</div>
+          <div class="v">1.6104<small>J/m²</small></div>
+          <div class="c">surface_energies.csv · term_000</div>
+        </div>
+        <p class="afgo2-caption" style="margin-top:12px">只有 1 个值：显示指标卡，不画图。</p>
+      </div>
+      <div class="afgo2-card afgo2-chart" style="grid-column:span 2">
+        <div class="afgo2-chart-head"><h4>表面能 γ（J/m²），按终端</h4><span class="afgo2-caption">5 个值 · 升序</span></div>
+        <div class="afgo2-hbar" id="hbar"></div>
+        <p class="afgo2-caption">高亮的是最低值，只说明它是最小值，不代表最优。</p>
+      </div>
+    </div>
+    <div class="afgo2-card afgo2-chart">
+      <div class="afgo2-chart-head"><h4>总能量（eV），按优化步</h4>
+        <div class="afgo2-seg"><button aria-pressed="true">图</button><button aria-pressed="false">表</button></div></div>
+      <svg class="afgo2-svgchart" id="line" viewBox="0 0 1000 220" style="width:100%;height:auto" role="img" aria-label="总能量随优化步变化"></svg>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 画板 3：过程（时间线 + 工作流） ================= -->
+<section id="process">
+  <div class="label">3 · 过程：步骤时间线（#84052）与工作流（plan 30470）</div>
+  <div class="afgo2">
+    <div class="two">
+      <div class="afgo2-card pad">
+        <div class="afgo2-chart-head" style="margin-bottom:14px"><h4 style="font-size:13px">步骤 · 3</h4>
+          <div class="afgo2-legend"><span><i style="background:repeating-linear-gradient(90deg,var(--afgo-line-3) 0 4px,transparent 4px 7px)"></i>排队</span><span><i style="background:var(--afgo-ok)"></i>运行</span></div></div>
+        <div class="afgo2-steps">
+          <div class="afgo2-step"><div class="rail"><span class="node"></span><span class="line"></span></div>
+            <div class="body"><div class="name">准备输入 <span class="afgo2-chip" data-tone="ok">完成</span></div>
+              <div class="times">开始 10:12:04 · 结束 10:12:31</div>
+              <div class="seg"><span class="q" style="width:10%"></span><span class="r" style="width:18%"></span></div></div>
+            <div class="dur">27s</div></div>
+          <div class="afgo2-step"><div class="rail"><span class="node"></span><span class="line"></span></div>
+            <div class="body"><div class="name">PySCF 单点计算 <span class="afgo2-chip" data-tone="ok">完成</span></div>
+              <div class="times">开始 10:13:02 · 结束 10:19:40 · 排队 31s</div>
+              <div class="seg"><span class="q" style="width:8%"></span><span class="r" style="width:92%"></span></div></div>
+            <div class="dur">6m 38s</div></div>
+          <div class="afgo2-step"><div class="rail"><span class="node" data-tone="run"></span><span class="line"></span></div>
+            <div class="body"><div class="name">汇总报告 <span class="afgo2-chip" data-tone="run">运行中</span></div>
+              <div class="times">开始 10:19:52 · 结束 —</div>
+              <div class="seg"><span class="r" data-tone="run" style="width:35%"></span></div></div>
+            <div class="dur">已运行 2m 10s</div></div>
+        </div>
+        <details class="afgo2-disclosure"><summary>调度器时间（与步骤时间分开记录）</summary>
+          <dl class="afgo2-prov"><dt>提交</dt><dd>10:12:01</dd><dd></dd><dt>开始</dt><dd>10:12:03</dd><dd></dd></dl></details>
+      </div>
+      <div class="afgo2-card pad">
+        <div class="afgo2-chart-head" style="margin-bottom:14px"><h4 style="font-size:13px">工作流 · plan 30470</h4>
+          <span class="afgo2-chip" data-tone="warn">状态接口降级 <span class="afgo2-hint" data-tip="平台 wf status 返回 500，已改用 wf execution 读取节点状态，结果带 degraded 标记。">i</span></span></div>
+        <div class="afgo2-wf">
+          <div class="afgo2-wf-node"><div class="n"><span class="afgo2-dot" data-tone="ok"></span>构建 slab</div><div class="m">完成</div><a href="#">任务 #30471 →</a></div>
+          <span class="afgo2-wf-arrow"></span>
+          <div class="afgo2-wf-node"><div class="n"><span class="afgo2-dot" data-tone="ok"></span>吸附构型枚举</div><div class="m">完成</div><a href="#">任务 #30472 →</a></div>
+          <span class="afgo2-wf-arrow"></span>
+          <div class="afgo2-wf-node"><div class="n"><span class="afgo2-dot" data-tone="run"></span>MACE 弛豫</div><div class="m">运行中</div><a href="#">任务 #30473 →</a></div>
+        </div>
+        <p class="afgo2-caption" style="margin-top:12px">只读视图：按顺序列出节点，点击可打开对应任务。DAG 图后续版本再做。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 画板 4：对话内工具卡片 ================= -->
+<section id="toolcards">
+  <div class="label">4 · 对话卡片：完成 / 运行中 / 失败</div>
+  <div class="afgo2">
+    <div class="afgo2-card afgo2-tc">
+      <div class="afgo2-tc-head"><span class="t">MACE 表面能</span><span class="id">#85244</span><span class="afgo2-chip" data-tone="ok">成功</span><span class="when">11-10 18:42 完成</span></div>
+      <div class="afgo2-metrics">
+        <div class="afgo2-metric"><div class="k">表面能 γ</div><div class="v">1.6104<small>J/m²</small></div></div>
+        <div class="afgo2-metric"><div class="k">原子数</div><div class="v">24</div></div>
+        <div class="afgo2-metric"><div class="k">运行时长</div><div class="v">1m 12s</div></div>
+      </div>
+      <div class="afgo2-tc-imgs">
+        <figure><div class="ph"><svg viewBox="0 0 200 150" width="100%"><g class="mini2"></g></svg></div><figcaption>代表结构 · slab_term_000_final.cif</figcaption></figure>
+        <figure><div class="ph"><svg viewBox="0 0 200 150" width="70%"><rect x="30" y="30" width="140" height="95" fill="var(--afgo-chart-1)" rx="2"/><line x1="24" y1="125" x2="180" y2="125" stroke="var(--afgo-line-3)"/></svg></div><figcaption>结果图 · surface_energy_rank.png</figcaption></figure>
+      </div>
+      <details class="afgo2-disclosure"><summary>来源与校验</summary>
+        <dl class="afgo2-prov">
+          <dt>结构</dt><dd>L2hvbWUv…aWY= · sha256 f7f5e984</dd><dd><button data-variant="text">复制</button></dd>
+          <dt>结果图</dt><dd>L2hvbWUv…bmc= · sha256 ad6566ee</dd><dd><button data-variant="text">复制</button></dd>
+        </dl></details>
+    </div>
+    <div class="two">
+      <div class="afgo2-card afgo2-tc">
+        <div class="afgo2-tc-head"><span class="t">PySCF 单点</span><span class="id">#84052</span><span class="afgo2-chip" data-tone="run">运行中</span><span class="when">已运行 8m 46s</span></div>
+        <div class="afgo2-caption" style="display:flex;justify-content:space-between"><span>步骤 3/3 · 汇总报告</span><span>刷新于 10:22:30</span></div>
+        <div class="afgo2-progress"><i style="width:66%"></i></div>
+        <p class="afgo2-caption">进度条按已完成的步骤数计算，不是时间估算。任务结束后自动附上结果图。</p>
+      </div>
+      <div class="afgo2-card afgo2-tc">
+        <div class="afgo2-tc-head"><span class="t">DSSP 二级结构</span><span class="id">#73045</span><span class="afgo2-chip" data-tone="err">失败</span><span class="when">11-02 09:31</span></div>
+        <div class="afgo2-notice" data-tone="err"><span class="grow">步骤 2「DSSP 计算」返回 __STEP_FAILED__<small>输入 1CRN.cif 缺少 _atom_site.label_seq_id · request_id 7f3a…c1</small></span></div>
+        <div style="display:flex;gap:8px"><button>查看日志</button><button data-variant="text">复制错误</button></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 画板 5：加载 / 空 / 错误 ================= -->
+<section id="states">
+  <div class="label">5 · 加载 / 空 / 错误</div>
+  <div class="afgo2">
+    <div class="three">
+      <div class="afgo2-card pad" style="display:flex;flex-direction:column;gap:14px" aria-busy="true">
+        <div class="afgo2-skel" style="width:40%"></div><div class="afgo2-skel" style="width:85%;height:20px"></div>
+        <div class="afgo2-skel" style="width:60%"></div><div class="afgo2-skel" style="height:120px;border-radius:8px"></div>
+        <span class="afgo2-caption">读取任务详情时，按最终布局显示骨架屏</span>
+      </div>
+      <div class="afgo2-card afgo2-empty">
+        <b>这个任务没有可预览的结果</b>
+        <span class="afgo2-caption">没有找到结构、图片或数值表。原始文件可以在「文件」里下载。</span>
+        <button style="margin-top:8px">查看文件</button>
+      </div>
+      <div class="afgo2-card pad" style="display:flex;flex-direction:column;gap:10px">
+        <div class="afgo2-notice" data-tone="warn"><span class="grow">同步延迟，正在显示 16:30 读取的内容<small>12 秒后自动重试</small></span></div>
+        <div class="afgo2-notice" data-tone="err"><span class="grow">没有权限读取这个任务<small>403 · 当前账号不是任务所有者 · request_id 2b91…e0</small></span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+</div>
+<script>
+  // 原型用：主题切换和假数据绘图
+  const q = new URLSearchParams(location.search);
+  if (q.get("theme")) document.documentElement.dataset.theme = q.get("theme");
+
+  // 生成金红石结构的示意图（不是真实坐标）
+  function slab(g, w, h, scale) {
+    const NS = "http://www.w3.org/2000/svg";
+    const atoms = [];
+    for (let layer = 0; layer < 3; layer++) for (let i = 0; i < 4; i++) {
+      const x = w / 2 + (i - 1.5) * 34 * scale + (layer % 2) * 17 * scale;
+      const y = h / 2 + (layer - 1) * 38 * scale;
+      atoms.push({ x, y, el: "Ti" });
+      atoms.push({ x: x - 12 * scale, y: y - 11 * scale, el: "O" });
+      atoms.push({ x: x + 12 * scale, y: y + 11 * scale, el: "O" });
+    }
+    for (const a of atoms) for (const b of atoms) {
+      if (a.el === "Ti" && b.el === "O" && Math.hypot(a.x - b.x, a.y - b.y) < 24 * scale) {
+        const l = document.createElementNS(NS, "line");
+        Object.entries({ x1: a.x, y1: a.y, x2: b.x, y2: b.y, stroke: "var(--afgo-fg-4)", "stroke-width": 2.2 * scale }).forEach(([k, v]) => l.setAttribute(k, v));
+        g.appendChild(l);
+      }
+    }
+    for (const a of atoms) {
+      const c = document.createElementNS(NS, "circle");
+      Object.entries({ cx: a.x, cy: a.y, r: (a.el === "Ti" ? 8 : 6) * scale,
+        fill: a.el === "Ti" ? "#a7adb6" : "#e0504a" }).forEach(([k, v]) => c.setAttribute(k, v));
+      g.appendChild(c);
+    }
+  }
+  slab(document.getElementById("mini"), 200, 160, 0.95);
+  document.querySelectorAll(".mini2").forEach((g) => slab(g, 200, 150, 0.9));
+  slab(document.getElementById("big"), 640, 480, 2.6);
+
+  // 水平条形图
+  const rows = [["term_000", 1.6104], ["term_001", 1.7421], ["term_002", 1.8853], ["term_003", 2.0310], ["term_004", 2.1644]];
+  const max = Math.max(...rows.map((r) => r[1]));
+  document.getElementById("hbar").innerHTML = rows.map(([k, v], i) =>
+    `<span class="lab">${k}</span><span class="track"><span class="fill" ${i === 0 ? "data-hi" : ""} style="width:${(v / max * 100).toFixed(1)}%"></span></span><span class="val" ${i === 0 ? "data-hi" : ""}>${v.toFixed(4)}</span>`).join("");
+
+  // 折线图：40 步优化收敛
+  const svg = document.getElementById("line");
+  const N = 40, pts = Array.from({ length: N }, (_, i) => -1421.2 - 3.4 * (1 - Math.exp(-i / 7)) + Math.sin(i * 1.7) * 0.06 * Math.exp(-i / 12));
+  const lo = Math.min(...pts), hi = Math.max(...pts), L = 70, R = 980, T = 14, B = 190;
+  const X = (i) => L + i / (N - 1) * (R - L), Y = (v) => B - (v - lo) / (hi - lo) * (B - T);
+  let s = "";
+  for (let k = 0; k <= 4; k++) { const v = lo + (hi - lo) * k / 4, y = Y(v);
+    s += `<line class="grid" x1="${L}" x2="${R}" y1="${y}" y2="${y}"/><text x="${L - 8}" y="${y + 4}" text-anchor="end">${v.toFixed(1)}</text>`; }
+  for (const i of [0, 10, 20, 30, 39]) s += `<text x="${X(i)}" y="${B + 20}" text-anchor="middle">${i + 1}</text>`;
+  s += `<line class="axis" x1="${L}" x2="${R}" y1="${B}" y2="${B}"/>`;
+  s += `<path class="line" d="${pts.map((v, i) => `${i ? "L" : "M"}${X(i).toFixed(1)} ${Y(v).toFixed(1)}`).join(" ")}"/>`;
+  s += `<circle class="last" cx="${X(N - 1)}" cy="${Y(pts[N - 1])}" r="4"/><text x="${X(N - 1) - 8}" y="${Y(pts[N - 1]) - 10}" text-anchor="end" style="fill:var(--afgo-fg)">${pts[N - 1].toFixed(3)} eV · 第 40 步</text>`;
+  svg.innerHTML = s;
+</script>
+</body>
+</html>
