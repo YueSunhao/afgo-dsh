@@ -52,6 +52,7 @@ jobs:
           node --check lib/workbench.js
           node --check lib/client.js
           node --check lib/visualization.js
+          node --check lib/task-inputs.js
           node --check viewer/engine.js
           python - <<'PY'
           import json, pathlib
