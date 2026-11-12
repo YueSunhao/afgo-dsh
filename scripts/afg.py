@@ -622,7 +622,7 @@ def _task_outcome(detail):
     for st in detail.get("steps") or []:
         failures = []
         slurm = (st.get("slurm_job_status") or "").upper()
-        if slurm in ("FAILED", "CANCELLED", "TIMEOUT", "NODE_FAIL"):
+        if slurm in ("FAILED", "CANCELLED", "TIMEOUT", "NODE_FAIL", "OUT_OF_MEMORY"):
             failures.append("slurm=%s" % slurm)
         if isinstance(st.get("status"), int) and st["status"] < 0:
             failures.append("step_status=%s" % st["status"])

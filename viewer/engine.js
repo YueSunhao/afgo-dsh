@@ -8,6 +8,10 @@ const target = document.getElementById('viewport');
 const status = document.getElementById('status');
 const style = document.getElementById('style');
 const frame = document.getElementById('frame');
+const frameLabel = document.getElementById('frameLabel');
+const notesEl = document.getElementById('notes');
+const menu = document.getElementById('menu');
+const more = document.getElementById('more');
 let plugin;
 let payload;
 let trajectory;
@@ -18,6 +22,13 @@ let busy = false;
 let disposed = false;
 let representationName = 'spacefill';
 let framing = 'structure';
+// Frame switching never goes through operation(): disabling the slider while
+// it is being dragged, and rebuilding the whole model per frame, is what froze
+// the desktop renderer on a 24-frame EXTXYZ. Requests coalesce to the latest
+// frame and run one at a time.
+let wantedFrame = null;
+let frameRunning = false;
+let frameScheduled = false;
 
 // Theme: the host page sends computed --afgo-* colours so the viewer follows
 // DSH light/dark. The headless renderer sends none and keeps the light
@@ -77,38 +88,85 @@ async function operation(action) {
   }
 }
 
-async function showFrame(index) {
-  const previousCamera = model ? plugin.canvas3d.camera.getSnapshot() : null;
-  if (model) await plugin.build().delete(model.ref).commit();
-  model = await plugin.builders.structure.createModel(trajectory, { modelIndex: index });
-  structure = await plugin.builders.structure.createStructure(model, { name: 'model', params: {} });
-  if (!structure.data?.elementCount) throw new Error('文件没有可显示的原子');
-  if (structure.data.elementCount > 100000) throw new Error('当前结构超过 100,000 个原子的交互预览上限');
-  const component = await plugin.builders.structure.tryCreateComponentStatic(structure, 'all');
-  representation = await plugin.builders.structure.representation.addRepresentation(component, {
-    type: representationName, color: 'element-symbol',
-    typeParams: { ignoreHydrogens: false, quality: 'auto' }
-  });
-  await plugin.builders.structure.tryCreateUnitcell(model);
-  plugin.canvas3d.commit(true);
-  if (previousCamera) plugin.managers.camera.setSnapshot(previousCamera, 0);
-  else focusAtoms();
-  plugin.canvas3d.requestDraw();
+function renderNotes(items) {
+  notesEl.replaceChildren(...items.map((item) => {
+    const span = document.createElement('span');
+    span.textContent = item.text;
+    if (item.warn) span.className = 'warn';
+    return span;
+  }).flatMap((span, index) => index ? [document.createTextNode(' · '), span] : [span]));
+}
+
+function describe(index) {
   const symbols = model.data.atomicHierarchy.atoms.type_symbol;
-  const elements = [...new Set(Array.from({ length: symbols.rowCount }, (_, i) => symbols.value(i)))];
+  // Mol* stores type_symbol upper-cased for some formats (TI); show chemical case (Ti).
+  const elements = [...new Set(Array.from({ length: symbols.rowCount }, (_, i) => symbols.value(i)))]
+    .map((symbol) => String(symbol).charAt(0).toUpperCase() + String(symbol).slice(1).toLowerCase());
   const cell = ModelSymmetry.Provider.get(model.data)?.spacegroup?.cell;
   const occupancy = model.data.atomicConformation.occupancy;
   let partial = 0;
   for (let i = 0; i < occupancy.rowCount; i++) {
     if (occupancy.value(i) < 1) partial++;
   }
-  status.textContent = `${structure.data.elementCount} 个显示原子 · 元素 ${elements.join(' / ')} · 帧 ${index + 1}/${trajectory.data.frameCount}`;
-  const notes = ['原始坐标 · 未生成超胞 · 键线为推断邻接'];
-  if (cell) notes.push(`晶胞 ${Array.from(cell.size).map((v) => v.toFixed(3)).join(' × ')} Å`);
-  if (partial) notes.push(`${partial} 个部分占据位点，保留文件记录`);
-  if (payload.format === 'extxyz') notes.push('EXTXYZ 当前仅显示坐标帧；Lattice、PBC 和附加属性请核对原文件或 CIF');
-  document.getElementById('notes').textContent = notes.join(' · ');
+  const frames = trajectory.data.frameCount;
+  status.textContent = `${structure.data.elementCount} 原子 · ${elements.join(', ')}${frames > 1 ? ` · 帧 ${index + 1}/${frames}` : ''}`;
+  frameLabel.textContent = `${index + 1}/${frames}`;
+  const notes = [];
+  if (cell) notes.push({ text: `晶胞 ${Array.from(cell.size).map((v) => v.toFixed(2)).join(' × ')} Å` });
+  notes.push({ text: '原始坐标，未生成超胞' });
+  notes.push({ text: '键线为推断邻接', warn: true });
+  if (partial) notes.push({ text: `${partial} 个部分占据位点，保留文件记录` });
+  if (payload.format === 'extxyz') notes.push({ text: 'EXTXYZ 仅显示坐标帧；Lattice、PBC 和附加属性请核对原文件', warn: true });
+  renderNotes(notes);
+  return { elements, partial };
+}
+
+async function showFrame(index) {
+  if (model) {
+    // Same model node, new frame: structure, components, representation and
+    // unit cell are children and update in place; the camera is untouched.
+    await plugin.build().to(model.ref).update((old) => ({ ...old, modelIndex: index })).commit();
+  } else {
+    model = await plugin.builders.structure.createModel(trajectory, { modelIndex: index });
+    structure = await plugin.builders.structure.createStructure(model, { name: 'model', params: {} });
+    if (!structure.data?.elementCount) throw new Error('文件没有可显示的原子');
+    if (structure.data.elementCount > 100000) throw new Error('当前结构超过 100,000 个原子的交互预览上限');
+    const component = await plugin.builders.structure.tryCreateComponentStatic(structure, 'all');
+    representation = await plugin.builders.structure.representation.addRepresentation(component, {
+      type: representationName, color: 'element-symbol',
+      typeParams: { ignoreHydrogens: false, quality: 'auto' }
+    });
+    await plugin.builders.structure.tryCreateUnitcell(model);
+    plugin.canvas3d.commit(true);
+    focusAtoms();
+  }
+  plugin.canvas3d.requestDraw();
+  const { elements, partial } = describe(index);
   report('loaded', { atoms: structure.data.elementCount, frames: trajectory.data.frameCount, frame: index + 1, elements, partialOccupancySites: partial });
+}
+
+function requestFrame(index) {
+  wantedFrame = index;
+  frameLabel.textContent = `${index + 1}/${trajectory?.data?.frameCount ?? 1}`;
+  if (frameScheduled) return;
+  frameScheduled = true;
+  requestAnimationFrame(async () => {
+    frameScheduled = false;
+    if (frameRunning || disposed) return;
+    frameRunning = true;
+    try {
+      while (wantedFrame != null && !disposed) {
+        const next = wantedFrame;
+        wantedFrame = null;
+        await showFrame(next);
+      }
+    } catch (error) {
+      status.textContent = `无法切换到该帧：${error.message}`;
+      report('error', { message: status.textContent });
+    } finally {
+      frameRunning = false;
+    }
+  });
 }
 
 async function load(message) {
@@ -143,6 +201,9 @@ async function load(message) {
   frame.value = 1;
   document.getElementById('frames').hidden = trajectory.data.frameCount < 2;
   await showFrame(0);
+  // Liveness for the host page: a hung renderer stops beating and the page
+  // can tell the user instead of freezing with it.
+  setInterval(() => { if (!disposed) report('heartbeat'); }, 2000);
   if (message.autoExport === true) {
     const dataUri = await plugin.helpers.viewportScreenshot.getImageDataUri();
     report('png', { content: dataUri.split(',')[1], manifest: sceneManifest() });
@@ -155,13 +216,27 @@ style.addEventListener('change', () => operation(async () => {
     ...old, type: { name: representationName, params: { ignoreHydrogens: false, quality: 'auto' } }
   })).commit();
 }));
-frame.addEventListener('change', () => operation(() => showFrame(Number(frame.value) - 1)));
+frame.addEventListener('input', () => { if (trajectory) requestFrame(Number(frame.value) - 1); });
 document.getElementById('reset').addEventListener('click', () => { if (structure) focusAtoms(); });
 document.getElementById('full').addEventListener('click', () => {
   framing = 'full';
   plugin?.managers.camera.reset(undefined, 0);
 });
+function closeMenu() { menu.hidden = true; more.setAttribute('aria-expanded', 'false'); }
+more.addEventListener('click', (event) => {
+  event.stopPropagation();
+  menu.hidden = !menu.hidden;
+  more.setAttribute('aria-expanded', String(!menu.hidden));
+});
+document.addEventListener('click', (event) => { if (!menu.contains(event.target)) closeMenu(); });
+document.getElementById('fullscreen').addEventListener('click', () => report('fullscreen'));
+document.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape') return;
+  if (!menu.hidden) { closeMenu(); return; }
+  report('fullscreen-exit');
+});
 document.getElementById('png').addEventListener('click', () => operation(async () => {
+  closeMenu();
   const dataUri = await plugin.helpers.viewportScreenshot.getImageDataUri();
   report('png', { content: dataUri.split(',')[1], name: `task-${payload.taskId}-${payload.name}-frame-${frame.value}.png` });
 }));
@@ -171,10 +246,10 @@ function sceneManifest() {
     name: payload.name, sha256: payload.sha256, fetchedAt: payload.fetchedAt,
     renderer: { name: 'Mol*', version: VERSION }, frame: Number(frame.value),
     representation: representationName, framing, camera: plugin?.canvas3d?.camera.getSnapshot(),
-    notes: document.getElementById('notes').textContent
+    notes: notesEl.textContent
   };
 }
-document.getElementById('manifest').addEventListener('click', () => report('manifest', { manifest: sceneManifest() }));
+document.getElementById('manifest').addEventListener('click', () => { closeMenu(); report('manifest', { manifest: sceneManifest() }); });
 window.addEventListener('message', (event) => {
   if (event.source !== parent) return;
   if (event.data?.type === 'afgo-theme') {
