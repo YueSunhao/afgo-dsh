@@ -401,3 +401,74 @@ test("summarySourcesOf prefers the primary-file rule, then result-looking small 
   assert.equal(other.table.id, "main", "name hint beats the first small table");
   assert.deepEqual(api.summarySourcesOf("x", []), { primary: null, table: null, image: null });
 });
+
+test("verdictOf prefers the CLI outcome so workbench, tools and CLI agree", () => {
+  const steps = [{ id: "1", jobStatus: "COMPLETED", statusRaw: 1, hasOutput: true, error: null }];
+  // page alone would say success (non-empty structured_output); CLI saw success=false
+  assert.equal(api.verdictOf({ isThinking: false, steps }).state, "success");
+  const failed = api.verdictOf({ isThinking: false, steps,
+    outcome: { state: "failed", reason: "structured_output.success=false", evidence: ["structured_output.success=false"] } });
+  assert.deepEqual([failed.state, failed.label, failed.reason, failed.source], ["failed", "失败", "structured_output.success=false", "cli"]);
+  const unknown = api.verdictOf({ isThinking: false, steps, outcome: { state: "unknown", reason: "缺少判定依据", evidence: [] },
+    messages: { hasReadableReply: true } });
+  assert.equal(unknown.label, "待核实");
+  assert.match(unknown.reason, /以回复为准/);
+  // still running: the outcome is not a verdict yet
+  assert.equal(api.verdictOf({ isThinking: true, steps, outcome: { state: "success", reason: "x", evidence: [] } }).state, "running");
+  // malformed outcome falls back to the page logic
+  assert.equal(api.verdictOf({ isThinking: false, steps, outcome: { state: "great" } }).state, "success");
+});
+
+test("visualizationCandidates follows the host's shared rank when every file has one", () => {
+  const files = [
+    { id: "b", name: "b.png", rank: 1, visualization: { kind: "image" } },
+    { id: "a", name: "a_final.cif", rank: 0, visualization: { kind: "structure" } },
+    { id: "c", name: "c.csv", rank: 2, visualization: { kind: "table" } }
+  ];
+  assert.deepEqual(api.visualizationCandidates(files).map((file) => file.id), ["a", "b", "c"]);
+  const shared = api.summarySourcesOf("x", [{ id: "plot", name: "zz.png", size: 1, representative: "image", visualization: { kind: "image" } },
+    { id: "rank", name: "rank.png", size: 1, visualization: { kind: "image" } }]);
+  assert.equal(shared.image.id, "plot", "the host's representative image wins over local name hints");
+});
+
+test("chartKindOf picks metric, sorted bars or a line by how many values there are", () => {
+  assert.equal(api.chartKindOf(0), "none");
+  assert.equal(api.chartKindOf(1), "metric");
+  assert.equal(api.chartKindOf(2), "bars");
+  assert.equal(api.chartKindOf(30), "bars");
+  assert.equal(api.chartKindOf(31), "line");
+});
+
+test("barGeometryOf is zero-based: length reads as magnitude for positive, negative and mixed values", () => {
+  const close = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-9, `${actual} ≉ ${expected}`);
+  const positive = api.barGeometryOf([1, 2, 4]);
+  positive.forEach((bar) => close(bar.left, 0));
+  close(positive[2].width, 100);
+  close(positive[0].width, 25);
+  const negative = api.barGeometryOf([-1.25, -0.5]);
+  close(negative[0].left, 0);
+  close(negative[0].width, 100);
+  close(negative[1].left + negative[1].width, 100, "negative bars end at the zero line on the right");
+  const mixed = api.barGeometryOf([-1, 3]);
+  close(mixed[0].zero, 25);
+  close(mixed[0].left, 0);
+  close(mixed[0].width, 25);
+  close(mixed[1].left, 25);
+  close(mixed[1].width, 75);
+  assert.ok(api.barGeometryOf([0])[0].width > 0, "a zero value still draws a visible tick");
+});
+
+test("labelColumnOf prefers a short id column and skips long text", () => {
+  const rows = [["Termination", "File_ID", "Gamma"], ["Top0: O2Ti1 | Top1: O2Ti1 | Top2: O2Ti1 | Bot0", "term_000", "1.6"]];
+  assert.equal(api.labelColumnOf(rows, new Set([2])), 1);
+  assert.equal(api.labelColumnOf([["note", "v"], ["short", "1"]], new Set([1])), 0);
+  assert.equal(api.labelColumnOf([["v"], ["1"]], new Set([0])), -1);
+});
+
+test("niceTicks lands on 1/2/5 steps inside the range", () => {
+  assert.deepEqual(api.niceTicks(-1425.0, -1420.8, 4), [-1425, -1424, -1423, -1422, -1421]);
+  assert.deepEqual(api.niceTicks(0, 1, 4), [0, 0.2, 0.4, 0.6, 0.8, 1]);
+  assert.deepEqual(api.niceTicks(0.03, 0.97, 4), [0.2, 0.4, 0.6, 0.8]);
+  assert.deepEqual(api.niceTicks(2, 2), [2]);
+  assert.deepEqual(api.niceTicks(NaN, 1), []);
+});
