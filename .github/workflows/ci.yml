@@ -20,6 +20,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install runtime dependencies
+        run: npm ci --omit=dev --legacy-peer-deps --ignore-scripts
+
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
@@ -33,14 +40,25 @@ jobs:
           python scripts/afg.py --help
           python scripts/afg.py tasks --help
 
+      - name: Catalog and Workflow Session tests
+        run: python -m unittest discover -s tests
+
+      - name: Workbench client tests
+        run: node --test tests/*.test.mjs
+
       - name: Bundle manifest
         run: |
           node --check lib/index.js
+          node --check lib/workbench.js
+          node --check lib/client.js
+          node --check lib/visualization.js
+          node --check viewer/engine.js
           python - <<'PY'
           import json, pathlib
           pkg = json.loads(pathlib.Path("package.json").read_text(encoding="utf-8"))
           assert pkg["name"] == "afgo-dsh", pkg.get("name")
           assert pkg["main"] == "lib/index.js", pkg.get("main")
+          assert pathlib.Path(pkg["exports"]["./client"]).is_file()
           patch = pkg["dsh"]["bundle"]["patch"]
           assert pathlib.Path(patch).is_file(), patch
           assert "lib" in pkg["files"] and "scripts" in pkg["files"], pkg["files"]

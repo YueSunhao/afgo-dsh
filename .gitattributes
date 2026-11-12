@@ -1,7 +1,2 @@
-* text=auto eol=lf
-*.py text eol=lf
-*.md text eol=lf
-*.json text eol=lf
-*.yml text eol=lf
-*.yaml text eol=lf
-LICENSE text eol=lf
+# The offline viewer contains generated Mol* shader strings with significant formatting.
+lib/structure-viewer.html linguist-generated=true whitespace=-blank-at-eol

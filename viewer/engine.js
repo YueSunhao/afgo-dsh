@@ -1,0 +1,152 @@
+import { PluginContext } from 'molstar/lib/mol-plugin/context.js';
+import { DefaultPluginSpec } from 'molstar/lib/mol-plugin/spec.js';
+import { Color } from 'molstar/lib/mol-util/color/index.js';
+import { ModelSymmetry } from 'molstar/lib/mol-model-formats/structure/property/symmetry.js';
+
+const VERSION = '5.13.1';
+const target = document.getElementById('viewport');
+const status = document.getElementById('status');
+const style = document.getElementById('style');
+const frame = document.getElementById('frame');
+let plugin;
+let payload;
+let trajectory;
+let model;
+let representation;
+let structure;
+let busy = false;
+let disposed = false;
+let representationName = 'spacefill';
+let framing = 'structure';
+
+function focusAtoms() {
+  framing = 'structure';
+  plugin.managers.camera.focusSphere(structure.data.boundary.sphere, { minRadius: 1, extraRadius: 1.5, durationMs: 0 });
+}
+
+function report(type, fields = {}) {
+  parent.postMessage({ source: 'afgo-molstar', channel: payload?.channel, type, ...fields }, '*');
+}
+
+function controls(disabled) {
+  document.querySelectorAll('button,select,input').forEach((element) => { element.disabled = disabled; });
+}
+
+async function operation(action) {
+  if (busy || disposed) return;
+  busy = true;
+  controls(true);
+  try { await action(); }
+  catch (error) {
+    status.textContent = `无法显示结构：${error.message}。可返回产物下载原文件。`;
+    report('error', { message: status.textContent });
+  } finally {
+    busy = false;
+    controls(false);
+  }
+}
+
+async function showFrame(index) {
+  const previousCamera = model ? plugin.canvas3d.camera.getSnapshot() : null;
+  if (model) await plugin.build().delete(model.ref).commit();
+  model = await plugin.builders.structure.createModel(trajectory, { modelIndex: index });
+  structure = await plugin.builders.structure.createStructure(model, { name: 'model', params: {} });
+  if (!structure.data?.elementCount) throw new Error('文件没有可显示的原子');
+  if (structure.data.elementCount > 100000) throw new Error('当前结构超过 100,000 个原子的交互预览上限');
+  const component = await plugin.builders.structure.tryCreateComponentStatic(structure, 'all');
+  representation = await plugin.builders.structure.representation.addRepresentation(component, {
+    type: representationName, color: 'element-symbol',
+    typeParams: { ignoreHydrogens: false, quality: 'auto' }
+  });
+  await plugin.builders.structure.tryCreateUnitcell(model);
+  plugin.canvas3d.commit(true);
+  if (previousCamera) plugin.managers.camera.setSnapshot(previousCamera, 0);
+  else focusAtoms();
+  plugin.canvas3d.requestDraw();
+  const symbols = model.data.atomicHierarchy.atoms.type_symbol;
+  const elements = [...new Set(Array.from({ length: symbols.rowCount }, (_, i) => symbols.value(i)))];
+  const cell = ModelSymmetry.Provider.get(model.data)?.spacegroup?.cell;
+  const occupancy = model.data.atomicConformation.occupancy;
+  let partial = 0;
+  for (let i = 0; i < occupancy.rowCount; i++) {
+    if (occupancy.value(i) < 1) partial++;
+  }
+  status.textContent = `${structure.data.elementCount} 个显示原子 · 元素 ${elements.join(' / ')} · 帧 ${index + 1}/${trajectory.data.frameCount}`;
+  const notes = ['原始坐标 · 未生成超胞 · 键线为推断邻接'];
+  if (cell) notes.push(`晶胞 ${Array.from(cell.size).map((v) => v.toFixed(3)).join(' × ')} Å`);
+  if (partial) notes.push(`${partial} 个部分占据位点，保留文件记录`);
+  if (payload.format === 'extxyz') notes.push('EXTXYZ 当前仅显示坐标帧；Lattice、PBC 和附加属性请核对原文件或 CIF');
+  document.getElementById('notes').textContent = notes.join(' · ');
+  report('loaded', { atoms: structure.data.elementCount, frames: trajectory.data.frameCount, frame: index + 1, elements, partialOccupancySites: partial });
+}
+
+async function load(message) {
+  payload = message;
+  const spec = DefaultPluginSpec();
+  spec.canvas3d = { renderer: { backgroundColor: Color(0xf5f7fb) }, camera: { mode: 'orthographic' } };
+  plugin = new PluginContext(spec);
+  await plugin.init();
+  if (disposed) { plugin.dispose(); return; }
+  if (!await plugin.mountAsync(target)) throw new Error('当前设备无法初始化 WebGL');
+  const observer = new ResizeObserver(() => plugin.handleResize());
+  observer.observe(target);
+  window.addEventListener('beforeunload', () => { observer.disconnect(); plugin.dispose(); }, { once: true });
+  let format = message.format;
+  if (['cif', 'mmcif', 'mcif'].includes(format)) {
+    format = /_atom_site_fract_[xyz]\b/i.test(message.text) ? 'cifCore' : 'mmcif';
+  }
+  if (format === 'ent') format = 'pdb';
+  if (format === 'extxyz') format = 'xyz';
+  const data = await plugin.builders.data.rawData({ data: message.text, label: message.name });
+  trajectory = await plugin.builders.structure.parseTrajectory(data, format);
+  if (!trajectory.data?.frameCount) throw new Error('无法读取坐标帧');
+  representationName = /^(pdb|mmcif)$/.test(format) ? 'cartoon' : format === 'cifCore' ? 'spacefill' : 'ball-and-stick';
+  // Small PDB/mmCIF models can have no polymer residues; use atomic spheres.
+  const firstModel = trajectory.data.representative;
+  const hasPolymer = firstModel.atomicHierarchy.derived.residue.polymerType.some((value) => value > 0);
+  if (representationName === 'cartoon' && !hasPolymer) representationName = 'ball-and-stick';
+  document.querySelector('option[value="cartoon"]').disabled = !hasPolymer;
+  style.value = representationName;
+  frame.max = trajectory.data.frameCount;
+  frame.value = 1;
+  document.getElementById('frames').hidden = trajectory.data.frameCount < 2;
+  await showFrame(0);
+  if (message.autoExport === true) {
+    const dataUri = await plugin.helpers.viewportScreenshot.getImageDataUri();
+    report('png', { content: dataUri.split(',')[1], manifest: sceneManifest() });
+  }
+}
+
+style.addEventListener('change', () => operation(async () => {
+  representationName = style.value;
+  await plugin.build().to(representation.ref).update((old) => ({
+    ...old, type: { name: representationName, params: { ignoreHydrogens: false, quality: 'auto' } }
+  })).commit();
+}));
+frame.addEventListener('change', () => operation(() => showFrame(Number(frame.value) - 1)));
+document.getElementById('reset').addEventListener('click', () => { if (structure) focusAtoms(); });
+document.getElementById('full').addEventListener('click', () => {
+  framing = 'full';
+  plugin?.managers.camera.reset(undefined, 0);
+});
+document.getElementById('png').addEventListener('click', () => operation(async () => {
+  const dataUri = await plugin.helpers.viewportScreenshot.getImageDataUri();
+  report('png', { content: dataUri.split(',')[1], name: `task-${payload.taskId}-${payload.name}-frame-${frame.value}.png` });
+}));
+function sceneManifest() {
+  return {
+    schema: 'afgo.visualization/1', taskId: payload.taskId, fileId: payload.fileId,
+    name: payload.name, sha256: payload.sha256, fetchedAt: payload.fetchedAt,
+    renderer: { name: 'Mol*', version: VERSION }, frame: Number(frame.value),
+    representation: representationName, framing, camera: plugin?.canvas3d?.camera.getSnapshot(),
+    notes: document.getElementById('notes').textContent
+  };
+}
+document.getElementById('manifest').addEventListener('click', () => report('manifest', { manifest: sceneManifest() }));
+window.addEventListener('message', (event) => {
+  if (event.source !== parent || payload || event.data?.type !== 'afgo-structure') return;
+  operation(() => load(event.data));
+});
+window.addEventListener('beforeunload', () => { disposed = true; });
+controls(true);
+report('ready');

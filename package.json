@@ -1,7 +1,7 @@
 {
   "name": "afgo-dsh",
-  "version": "1.2.0",
-  "description": "AsterFire Go（星使智算）科学计算平台插件：一句话调用云端科学计算 —— 蛋白质结构预测与设计、分子动力学模拟、分子对接、自由能计算、生物信息学分析、DFT 密度泛函与量子化学计算。同时是一份可移植的 Agent 技能（DSH / WorkBuddy / Claude Code 通用），零第三方 Python 依赖。",
+  "version": "1.5.0",
+  "description": "面向 DeepSeek Harness（DSH）的 AsterFire Go 科学智算插件，提供可视化工作台与 Agent Skill，支持工具检索、任务时间线、Mol* 结构预览、结果图片与数值图、工作流调用及产物获取。",
   "keywords": [
     "dsh",
     "dsh-plugin",
@@ -46,14 +46,20 @@
     "workflow"
   ],
   "type": "module",
+  "scripts": {
+    "build:viewer": "node scripts/build-viewer.mjs"
+  },
   "main": "lib/index.js",
   "exports": {
     ".": "./lib/index.js",
+    "./client": "./lib/client.js",
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./package.json": "./package.json"
   },
   "files": [
     "lib",
+    "viewer",
+    "docs",
     "scripts",
     "reference",
     "examples",
@@ -71,6 +77,14 @@
     "bundle": {
       "patch": "./cordis.patch.yml"
     },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-api-remotes",
+        "@deepseek-ai/dsh-client-ui-tool",
+        "@deepseek-ai/dsh-client-ui-plugin-manager"
+      ]
+    },
     "engines": {
       "dsh": ">=0.1.7"
     }
@@ -86,5 +100,12 @@
     "@deepseek-ai/dsh-tools": {
       "optional": true
     }
+  },
+  "devDependencies": {
+    "esbuild": "0.25.12",
+    "molstar": "5.13.1"
+  },
+  "dependencies": {
+    "playwright-core": "1.65.0"
   }
 }
