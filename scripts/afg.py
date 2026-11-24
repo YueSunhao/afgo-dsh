@@ -438,12 +438,26 @@ BRIEF_KEYS = ("name", "display_name", "description", "tags", "type", "author",
               "version", "version_source", "versions")
 
 
-def _brief(items, full):
+def _brief(items, full, icons=False):
     if full:
         return items
     out = []
     for t in items:
         row = {k: t.get(k) for k in BRIEF_KEYS if t.get(k) not in (None, "", [])}
+        if icons and isinstance(t.get("icon"), str) and len(t["icon"]) <= 2048:
+            # The workbench caches this summary; never persist a signed image URL.
+            try:
+                url = urllib.parse.urlsplit(urllib.parse.urljoin("https://sidereus-ai.com/", t["icon"]))
+                # The live catalog uses this specific Galileo bucket, not the website CDN.
+                obs_icon = (url.netloc == "galileo.obs.cn-north-4.myhuaweicloud.com"
+                            and url.path.startswith("/toolbox-icons/")
+                            and "\\" not in url.path and not re.search(r"%(2f|5c|25|00)", url.path, re.I)
+                            and not any(segment in (".", "..") for segment in urllib.parse.unquote(url.path).split("/")))
+                if (url.scheme == "https" and (obs_icon or url.netloc in ("sidereus-ai.com", "static.sidereus-ai.com"))
+                        and not url.query and not url.fragment and re.search(r"\.(png|jpe?g|webp|gif|svg|ico)$", url.path, re.I)):
+                    row["icon"] = url.geturl()
+            except ValueError:
+                pass
         if isinstance(row.get("author"), dict):
             row["author"] = row["author"].get("name")
         if t.get("initial_assistant_message"):
@@ -709,7 +723,7 @@ def _catalog(a, kind):
     if a.limit:
         shown = shown[:a.limit]
     return {"count": len(shown), "entries": len(matched),
-            kind + "s": _brief(shown, a.full)}
+            kind + "s": _brief(shown, a.full, a.icons)}
 
 
 def cmd_agents(a):
@@ -1216,6 +1230,8 @@ def build_parser():
     kq.add_argument("--full", action="store_true", help="返回完整字段（含长文档）")
     kq.add_argument("--all-versions", action="store_true",
                     help="保留同名 Kit 的每个历史版本（默认按名字折叠）")
+    for listing in (pa, kq):
+        listing.add_argument("--icons", action="store_true", help="在简表里包含平台返回的图标地址")
     kq.set_defaults(func=cmd_kits)
     ksch = mkadd(ks, "schema")
     ksch.add_argument("name")
