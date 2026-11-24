@@ -38,7 +38,7 @@ from pathlib import Path
 DEFAULT_BASE = "https://sidereus-ai.com/api"
 API_PREFIX = "/open/v1"
 TIMEOUT = 120
-VERSION = "1.2.0"
+VERSION = "1.6.1"
 LAST_HEADERS = {}  # headers of the most recent request()
 
 

@@ -96,20 +96,34 @@
 
 ### 在 DSH 中安装
 
-在 DSH 插件管理器中添加 GitHub 仓库地址或已下载的插件安装包。
+当前正式版本为 **v1.6.1**。从 [Releases 下载页](https://github.com/YueSunhao/afgo-dsh/releases/tag/v1.6.1) 获取 `afgo-dsh-1.6.1.tgz`；安装包、校验文件和 [安装升级指南](docs/releases/v1.6.1.md) 同步发布。
+
+在 DSH 插件管理器中添加 GitHub 仓库地址，固定安装本次正式版本：
 
 ```text
-github:YueSunhao/afgo-dsh
+github:YueSunhao/afgo-dsh#v1.6.1
 ```
 
-安装完成后按宿主提示重新加载或重启 DSH，在工作台「设置」中填写 API Key 并验证账号。不同分支和版本的功能范围以对应的版本说明为准。 [版本记录](CHANGELOG.md)
+也可在终端安装下载的包（将路径换成实际保存位置）：
+
+```bash
+dsh plugin --profile desktop add /absolute/path/afgo-dsh-1.6.1.tgz
+```
+
+已有用户可执行以下命令升级至正式版本，或在插件管理器中将来源更新为上述地址：
+
+```bash
+dsh plugin --profile desktop add 'github:YueSunhao/afgo-dsh#v1.6.1'
+```
+
+安装或升级完成后重新加载或重启 DSH，从左侧「星使智算」进入工作台，在「设置 → 关于」核对 `afgo-dsh v1.6.1`。首次使用在连接卡片填写自己的 API Key 并验证账号；升级后可验证宿主已保存的 Key。 [版本记录](CHANGELOG.md)
 
 ### 安装 Agent Skill
 
 将仓库放入所用智能体的技能目录。以下以 DSH 用户级技能目录为例。
 
 ```bash
-git clone https://github.com/YueSunhao/afgo-dsh --branch workbench-v2-desktop ~/.dsh/skills/afg
+git clone https://github.com/YueSunhao/afgo-dsh --branch v1.6.1 ~/.dsh/skills/afg
 ```
 
 技能模式使用 `AFG_TOKEN` 环境变量或用户目录下的 `~/.afg/config.json` 配置令牌。配置文件格式如下，示例中的占位内容需替换为个人 API Key。
