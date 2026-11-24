@@ -22,11 +22,11 @@ function uiServices() {
   } };
 }
 
-async function openPanel(t, ui) {
+async function openPanel(t, ui, options = {}) {
   const Panel = ui.entries.get('main');
   assert.ok(Panel, 'main panel is registered');
   let tree;
-  await renderer.act(async () => { tree = renderer.create(React.createElement(Panel)); });
+  await renderer.act(async () => { tree = renderer.create(React.createElement(Panel), options); });
   t.after(() => renderer.act(() => { tree.unmount(); }));
   return tree;
 }
@@ -46,6 +46,41 @@ async function fixture(dispatch, mount = async () => {}) {
   return ui;
 }
 const unconfigured = { ok: true, value: { ok: true, data: { configured: false, writable: true } } };
+
+test('panel resize tracks the scroll region and full screen follows native exit', async t => {
+  const previousDocument = globalThis.document;
+  const previousObserver = globalThis.ResizeObserver;
+  const doc = new EventTarget();
+  doc.fullscreenEnabled = true;
+  doc.fullscreenElement = null;
+  doc.exitFullscreen = async () => { doc.fullscreenElement = null; doc.dispatchEvent(new Event('fullscreenchange')); };
+  globalThis.document = doc;
+  let resize;
+  globalThis.ResizeObserver = class { constructor(callback) { resize = callback; } observe() {} disconnect() {} };
+  const properties = new Map();
+  const body = { clientWidth: 740, clientHeight: 510, matches: () => true,
+    style: { setProperty: (k, v) => properties.set(k, v), removeProperty: k => properties.delete(k) } };
+  const frame = { requestFullscreen: async () => { doc.fullscreenElement = frame; doc.dispatchEvent(new Event('fullscreenchange')); } };
+  const tree = await openPanel(t, await fixture(() => unconfigured), {
+    createNodeMock(element) {
+      if (element.props['data-afgo-body'] !== undefined) return body;
+      if (element.props.className?.includes('afgo2-workbench')) return frame;
+      return null;
+    }
+  });
+  t.after(() => { globalThis.document = previousDocument; globalThis.ResizeObserver = previousObserver; });
+  const root = () => tree.root.findByProps({ className: 'afgo2 afgo2-workbench' });
+  const toggle = () => tree.root.findByProps({ className: 'afgo2-fullscreen' });
+  assert.equal(root().props['data-compact'], '');
+  assert.equal(properties.get('--afgo-body-height'), '510px');
+  await renderer.act(async () => { body.clientWidth = 1200; body.clientHeight = 720; resize(); });
+  assert.equal(root().props['data-compact'], undefined);
+  assert.equal(properties.get('--afgo-body-height'), '720px');
+  await renderer.act(async () => { await toggle().props.onClick(); });
+  assert.equal(toggle().props['aria-pressed'], 'true');
+  await renderer.act(async () => { await doc.exitFullscreen(); });
+  assert.equal(toggle().props['aria-pressed'], 'false');
+});
 
 test('fresh account waits for namespace mount, then opens the API Key form without verify', async t => {
   const actions = [];

@@ -24,8 +24,8 @@ jobs:
         with:
           node-version: "24"
 
-      - name: Install runtime dependencies
-        run: npm ci --omit=dev --legacy-peer-deps --ignore-scripts
+      - name: Install runtime and test dependencies
+        run: npm ci --legacy-peer-deps --ignore-scripts
 
       - uses: actions/setup-python@v5
         with:
@@ -115,7 +115,7 @@ jobs:
       - name: No credentials committed
         run: |
           # 令牌形态：32 位十六进制，且不是示例占位符
-          if grep -rInE '\b[0-9a-f]{32}\b' --include='*.md' --include='*.py' --include='*.json' . \
+          if grep -rInE '\b[0-9a-f]{32}\b' --exclude-dir=node_modules --exclude-dir=.git --include='*.md' --include='*.py' --include='*.json' . \
              | grep -viE 'sha256|hash|example|占位'; then
             echo "::error::疑似把真实 API 令牌提交进仓库"
             exit 1
