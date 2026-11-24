@@ -26,6 +26,27 @@ class CatalogTests(unittest.TestCase):
             self.assertEqual(["sample", "alternate", "other"], [t["name"] for t in result[kind]])
             self.assertEqual(["1.2.0", "1.10.0"], result[kind][0]["versions"])
 
+    def test_icon_opt_in_preserves_public_url_without_requiring_full_catalog(self):
+        icon = "https://static.sidereus-ai.com/toolbox-icons/sample/1.0/icon.svg"
+        entries = [{"name": "sample", "icon": icon, "input_schema": {"fields": []}}]
+        for kind, argv in (("agents", ["agents"]), ("kits", ["kits", "list"])):
+            for flags in ([], ["--icons"]):
+                args = afg.build_parser().parse_args(argv + flags)
+                with patch.object(afg, "request", return_value={"success": True, "data": {"toolboxes": entries}}):
+                    row = args.func(args)[kind][0]
+                self.assertEqual(row.get("icon"), icon if flags else None)
+                self.assertNotIn("input_schema", row)
+
+    def test_real_bucket_scope_and_unsigned_toolbox_icons_only(self):
+        origin = "https://galileo.obs.cn-north-4.myhuaweicloud.com"
+        good = origin + "/toolbox-icons/prod/kit/1.2/icon.jpeg"
+        self.assertEqual(afg._brief([{"icon": good}], False, True), [{"icon": good}])
+        for bad in (good + "?signature=example", good + "#fragment", good.replace("galileo.", "other."),
+                    origin + "/toolbox-demos/prod/kit/1.2/structure.png", origin + "/toolbox-icons/../private/a.png",
+                    origin + "/toolbox-icons/%2e%2e/private/a.png", good.replace("https:", "http:")):
+            with self.subTest(bad=bad):
+                self.assertNotIn("icon", afg._brief([{"icon": bad}], False, True)[0])
+
     def test_version_sources_and_schema_ambiguity(self):
         base = "https://example.test/toolbox-demos/prod/sample/"
         icon = "https://example.test/toolbox-icons/sample/1.1.0/icon.svg"

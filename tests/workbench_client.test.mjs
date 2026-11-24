@@ -25,7 +25,13 @@ globalThis.localStorage = {
 
 await import("../lib/client.js");
 
+class ComponentStub {
+  constructor(props) { this.props = props; this.state = {}; }
+  setState() {}
+}
+
 const ReactStub = {
+  Component: ComponentStub,
   createElement: () => null,
   useState: (initial) => [typeof initial === "function" ? initial() : initial, () => {}],
   useEffect: () => {},
@@ -41,18 +47,113 @@ const exported = registration.factory((specifier) => {
 });
 const api = exported.__test;
 
-test("conversation image views register before the workbench remote becomes available", async () => {
+const translations = new Map();
+const dictionariesByNamespace = new Map();
+const locale = {
+  register(namespace, dictionaries) {
+    dictionariesByNamespace.set(namespace, dictionaries);
+    const active = dictionaries.zh ?? dictionaries.en;
+    for (const [key, value] of Object.entries(active)) translations.set(`${namespace}:${key}`, value);
+  },
+  bind(namespace) {
+    return (key) => {
+      const value = translations.get(`${namespace}:${key}`);
+      if (value === undefined) throw new Error(`missing translation: ${namespace}:${key}`);
+      return value;
+    };
+  }
+};
+
+/** A client context stub: service injection, slots, effects, locale, remote. */
+function fakeContext({ services = new Map(), onSlot = () => {} } = {}) {
   const registered = [];
-  await exported.apply({
-    slots: {
-      inject(name, callback) { if (name === "tool.call.toolview") callback(); },
-      register(entry) { registered.push(entry); }
+  const calls = [];
+  const slots = {
+    inject(name, callback) {
+      calls.push(`slot:${name}`);
+      onSlot(name);
+      const dispose = callback();
+      return typeof dispose === "function" ? dispose : () => {};
     },
+    register(entry, component) { registered.push({ ...entry, component }); return () => {}; }
+  };
+  const ctx = {
+    slots,
+    effect(effect) { return effect(); },
+    locale,
+    get: (service) => services.get(service),
     remote: { async $mount() {} },
-    async inject() {}
-  });
-  assert.deepEqual(registered.map((entry) => entry.key), ["afg_results", "afg_tasks"]);
-  assert.ok(registered.every((entry) => entry.children["tool.call.images"].scope === "session"));
+    inject(services_, callback) {
+      calls.push(`inject:${services_.join(",")}`);
+      return callback({ slots, layout: {} });
+    }
+  };
+  return { ctx, registered, calls, services };
+}
+
+test("conversation image views register before the workbench remote becomes available", async () => {
+  const { ctx, registered } = fakeContext({ onSlot: () => {} });
+  await exported.apply(ctx);
+  const toolViews = registered.filter((entry) => entry.name === "tool.call.toolview");
+  assert.deepEqual(toolViews.map((entry) => entry.key), ["afg_results", "afg_tasks"]);
+  assert.ok(toolViews.every((entry) => entry.children["tool.call.images"].scope === "session"));
+});
+
+test("the workbench registers only inside the layout scope, as a sidebar entry plus a main panel", async () => {
+  const { ctx, registered, calls } = fakeContext();
+  await exported.apply(ctx);
+  assert.ok(calls.includes("inject:layout"), "waits for the layout service that owns the main panel");
+  const sidebar = registered.find((entry) => entry.name === "sidebar.panellist");
+  const panel = registered.find((entry) => entry.name === "main");
+  assert.ok(sidebar, "registers a sidebar entry");
+  assert.ok(panel, "registers a main panel");
+  assert.equal(sidebar.id, "afgo-dsh");
+  assert.equal(panel.key, "afgo-dsh", "the sidebar id addresses the main panel");
+  assert.equal(sidebar.order, 30);
+  assert.equal(sidebar.label(), "星使智算");
+  assert.equal(typeof panel.component, "function");
+  assert.equal(typeof sidebar.component, "function");
+  assert.ok(!calls.includes("slot:plugins.bundle.config"), "the workbench no longer renders inside the plugin detail page");
+  assert.ok(!registered.some((entry) => entry.name === "plugins.bundle.config"));
+});
+
+test("page registrations are disposed together when the plugin unloads", async () => {
+  const { ctx } = fakeContext();
+  const disposed = [];
+  const register = ctx.slots.register;
+  ctx.slots.register = (entry, component) => {
+    register(entry, component);
+    return () => disposed.push(entry.name);
+  };
+  const effects = [];
+  ctx.effect = (factory) => { effects.push(factory); return factory(); };
+  await exported.apply(ctx);
+  const cleanup = effects.at(-1);
+  assert.equal(typeof cleanup, "function", "the page owns a cleanup effect");
+  cleanup()();
+  assert.deepEqual(disposed.sort(), ["main", "sidebar.panellist"]);
+});
+
+test("the workbench registers copy for both baseline locales", async () => {
+  const { ctx } = fakeContext();
+  await exported.apply(ctx);
+  const dictionaries = dictionariesByNamespace.get("afgo.workbench");
+  assert.ok(dictionaries?.zh && dictionaries?.en, "both baseline locales are supplied");
+  assert.deepEqual(Object.keys(dictionaries.zh).sort(), Object.keys(dictionaries.en).sort());
+  const keys = [
+    "sidebar", "title", "subtitle", "tabs", "tasks", "discover", "settings",
+    "enterFullscreen", "exitFullscreen", "exitHint", "fullscreenUnavailable", "fullscreenFailed",
+    "loading", "connect", "reconnect", "connectHint", "serviceTitle", "retry", "serviceHint",
+    "taskId", "openTask", "openById", "invalidTaskId"
+  ];
+  for (const key of keys) {
+    assert.equal(typeof dictionaries.zh[key], "string", `zh.${key}`);
+    assert.equal(typeof dictionaries.en[key], "string", `en.${key}`);
+  }
+  assert.equal(dictionaries.zh.sidebar, "星使智算");
+  assert.equal(dictionaries.zh.enterFullscreen, "全屏");
+  assert.equal(dictionaries.zh.exitFullscreen, "退出全屏");
+  assert.equal(dictionaries.zh.tasks, "我的任务");
 });
 
 test("conversation image reports survive result compaction through persisted presentation metadata", () => {
